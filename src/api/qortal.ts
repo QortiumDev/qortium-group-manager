@@ -15,6 +15,27 @@ export async function inviteToGroup(groupId: number, invitee: string, timeToLive
   await qdnRequest({ action: 'INVITE_TO_GROUP', groupId, invitee, timeToLive });
 }
 
+export interface CreateGroupParams {
+  groupName: string;
+  description: string;
+  isOpen: boolean;
+  approvalThreshold: string;
+  minimumBlockDelay: number;
+  maximumBlockDelay: number;
+}
+
+export async function createGroup(params: CreateGroupParams): Promise<void> {
+  await qdnRequest({
+    action: 'CREATE_GROUP',
+    groupName: params.groupName,
+    description: params.description,
+    isOpen: params.isOpen,
+    approvalThreshold: params.approvalThreshold,
+    minimumBlockDelay: params.minimumBlockDelay,
+    maximumBlockDelay: params.maximumBlockDelay,
+  });
+}
+
 export interface UpdateGroupParams {
   groupId: number;
   description: string;
