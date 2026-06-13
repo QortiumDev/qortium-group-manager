@@ -16,7 +16,7 @@ export function AddressLink({ address, fontSize = '0.72rem', monoColor }: Props)
   function handleClick(e: React.MouseEvent) {
     if (!ENABLE_CROSS_APP_LINKS) return;
     e.stopPropagation();
-    void qortalRequest({
+    void qdnRequest({
       action: 'OPEN_NEW_TAB',
       qortalLink: appLink('chain', `/#/address/${address}`),
     });

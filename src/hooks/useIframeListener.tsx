@@ -1,49 +1,29 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { themeAtom } from '../state/atoms';
+import { themeAtom, accentAtom } from '../state/atoms';
 import { EnumTheme } from '../types';
 import { useSetAtom } from 'jotai';
 
-export type TextSize =
-  | 'extra-large'
-  | 'extra-small'
-  | 'large'
-  | 'medium'
-  | 'small';
+export type TextSize = 'extra-large' | 'extra-small' | 'huge' | 'large' | 'medium' | 'small';
 
 const SUPPORTED_TEXT_SIZES: readonly TextSize[] = [
-  'extra-small',
-  'small',
-  'medium',
-  'large',
-  'extra-large',
+  'extra-small', 'small', 'medium', 'large', 'extra-large', 'huge',
 ];
-
-type CustomWindow = {
-  _qdnTheme?: 'dark' | 'light';
-  _qdnTextSize?: TextSize;
-};
 
 type BridgeMessageData = {
   action?: unknown;
+  accent?: unknown;
+  language?: unknown;
   path?: unknown;
   textSize?: unknown;
   theme?: unknown;
 };
 
-const customWindow = window as unknown as CustomWindow;
-
 export function isSupportedTextSize(value: unknown): value is TextSize {
-  return (
-    typeof value === 'string' &&
-    SUPPORTED_TEXT_SIZES.includes(value as TextSize)
-  );
+  return typeof value === 'string' && SUPPORTED_TEXT_SIZES.includes(value as TextSize);
 }
 
-export function applyTextSize(
-  value: unknown,
-  root: HTMLElement = document.documentElement
-) {
+export function applyTextSize(value: unknown, root: HTMLElement = document.documentElement) {
   if (!isSupportedTextSize(value)) return;
   root.dataset.textSize = value;
 }
@@ -70,42 +50,35 @@ export function getNavigationReplyTargetOrigin(event: MessageEvent<unknown>) {
 
 export const useIframe = () => {
   const setTheme = useSetAtom(themeAtom);
+  const setAccent = useSetAtom(accentAtom);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const themeDefault = customWindow?._qdnTheme;
-    if (themeDefault === 'dark') setTheme(EnumTheme.DARK);
-    else if (themeDefault === 'light') setTheme(EnumTheme.LIGHT);
-
-    applyTextSize(customWindow?._qdnTextSize);
-
     function handleMessage(event: MessageEvent<unknown>) {
-      if (!isTrustedBridgeMessage(event) || !isBridgeMessageData(event.data))
-        return;
+      if (!isTrustedBridgeMessage(event) || !isBridgeMessageData(event.data)) return;
 
       const data = event.data;
 
-      if (
-        data.action === 'NAVIGATE_TO_PATH' &&
-        isSafeNavigationPath(data.path)
-      ) {
+      if (data.action === 'NAVIGATE_TO_PATH' && isSafeNavigationPath(data.path)) {
         navigate(data.path);
         const replyOrigin = getNavigationReplyTargetOrigin(event);
         if (replyOrigin) {
-          window.parent.postMessage(
-            { action: 'NAVIGATION_SUCCESS', path: data.path },
-            replyOrigin
-          );
+          window.parent.postMessage({ action: 'NAVIGATION_SUCCESS', path: data.path }, replyOrigin);
         }
       } else if (data.action === 'THEME_CHANGED') {
         if (data.theme === 'dark') setTheme(EnumTheme.DARK);
         else if (data.theme === 'light') setTheme(EnumTheme.LIGHT);
+      } else if (data.action === 'ACCENT_CHANGED' && typeof data.accent === 'string') {
+        setAccent(data.accent);
       } else if (data.action === 'TEXT_SIZE_CHANGED') {
         applyTextSize(data.textSize);
+      } else if (data.action === 'LANGUAGE_CHANGED' && typeof data.language === 'string') {
+        document.documentElement.lang = data.language;
+        document.documentElement.dir = data.language === 'ar' || data.language === 'he' ? 'rtl' : 'ltr';
       }
     }
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [navigate, setTheme]);
+  }, [navigate, setTheme, setAccent]);
 };

@@ -108,7 +108,7 @@ function GroupCard({ group, isMember, onJoined }: { group: GroupData; isMember: 
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <PeopleIcon sx={{ fontSize: '0.8rem', color: c.textSecondary }} />
         <Typography sx={{ fontSize: '0.72rem', color: c.textSecondary, flex: 1 }}>
-          {group.memberCount.toLocaleString()} members
+          {(group.memberCount ?? 0).toLocaleString()} members
           {group.ownerPrimaryName && ` · ${group.ownerPrimaryName}`}
         </Typography>
         {isMember ? (

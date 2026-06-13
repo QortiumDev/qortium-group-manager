@@ -232,12 +232,11 @@ export function GroupPage() {
     try {
       await updateGroup({
         groupId: group.groupId,
-        newOwner: account.address,
         description: editForm.description,
         isOpen: editForm.isOpen,
         approvalThreshold: editForm.approvalThreshold,
-        minBlock: editForm.minBlock,
-        maxBlock: editForm.maxBlock,
+        minimumBlockDelay: editForm.minBlock,
+        maximumBlockDelay: editForm.maxBlock,
       });
       setEditStatus({ type: 'success', msg: 'Group updated.' });
       setShowEdit(false);

@@ -34,7 +34,7 @@ export function TopBar() {
       }}
     >
       <Box sx={{ fontWeight: tokens.typography.weightBlack, fontSize: '1rem', color: c.textPrimary, letterSpacing: '-0.01em', mr: 'auto' }}>
-        Groupium
+        Groups
       </Box>
 
       {NAV.map(({ path, icon, label }) => {
