@@ -1,6 +1,7 @@
 import { useAtom } from 'jotai';
 import { Box, IconButton, Tooltip } from '@mui/material';
 import GroupsIcon from '@mui/icons-material/Groups';
+import GroupAddIcon from '@mui/icons-material/GroupAdd';
 import SearchIcon from '@mui/icons-material/ManageSearch';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
@@ -11,8 +12,9 @@ import { themeAtom } from '../../state/atoms';
 import { EnumTheme } from '../../types';
 
 const NAV = [
-  { path: '/',          icon: <SearchIcon fontSize="small" />,  label: 'Browse Groups' },
-  { path: '/my-groups', icon: <GroupsIcon fontSize="small" />,  label: 'My Groups'     },
+  { path: '/',             icon: <GroupsIcon fontSize="small" />,   label: 'My Groups'     },
+  { path: '/browse',       icon: <SearchIcon fontSize="small" />,   label: 'Browse Groups' },
+  { path: '/create-group', icon: <GroupAddIcon fontSize="small" />, label: 'Create Group'  },
 ];
 
 export function TopBar() {
@@ -34,7 +36,7 @@ export function TopBar() {
       }}
     >
       <Box sx={{ fontWeight: tokens.typography.weightBlack, fontSize: '1rem', color: c.textPrimary, letterSpacing: '-0.01em', mr: 'auto' }}>
-        Groupium
+        Groups
       </Box>
 
       {NAV.map(({ path, icon, label }) => {

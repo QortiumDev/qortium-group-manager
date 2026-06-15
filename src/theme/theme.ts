@@ -21,6 +21,7 @@ const baseTheme = createTheme({
     MuiDialog:  { styleOverrides: { paper: { backgroundImage: 'none' } } },
     MuiPopover: { styleOverrides: { paper: { backgroundImage: 'none' } } },
     MuiPaper:   { styleOverrides: { root:  { backgroundImage: 'none' } } },
+    MuiTooltip: { defaultProps: { PopperProps: { disablePortal: true } } },
     MuiButton:  {
       styleOverrides: {
         root: { textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: tokens.typography.weightBold },

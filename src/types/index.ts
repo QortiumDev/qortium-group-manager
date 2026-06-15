@@ -11,11 +11,28 @@ export interface GroupData {
   created: number;
   updated?: number;
   isOpen: boolean;
+  isMintingGroup?: boolean;
   memberCount: number;
   ownerPrimaryName?: string;
   approvalThreshold?: string;
   minBlockDelay?: number;
   maxBlockDelay?: number;
+}
+
+export interface MintingStatus {
+  address: string;
+  hasRewardShare: boolean;
+  isMinting: boolean | null;
+  keyOnNode: boolean | null;
+  nodeMintingPossible: boolean | null;
+}
+
+export interface StartMintingResult {
+  accepted: boolean;
+  address: string;
+  keyAdded: boolean;
+  rewardSharePending?: boolean;
+  transactionSignature?: string;
 }
 
 export interface GroupMember {
@@ -46,4 +63,23 @@ export interface GroupJoinRequest {
 export interface GroupWithJoinRequests {
   group: GroupData;
   joinRequests: GroupJoinRequest[];
+}
+
+export interface GroupBan {
+  groupId: number;
+  offender: string;
+  admin: string;
+  banned: number;
+  reason: string | null;
+  expiry: number | null;
+  offenderName?: string;
+  adminName?: string;
+}
+
+export interface GroupKick {
+  member: string;
+  groupId: number;
+  reason: string | null;
+  timestamp: number;
+  groupName?: string;
 }

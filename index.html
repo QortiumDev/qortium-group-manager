@@ -7,22 +7,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <script>
-      if (typeof qortalRequest === 'undefined') {
-        const delay = ms => new Promise(r => setTimeout(r, ms));
-        window.qortalRequest = function(opts) {
-          const action = opts.action;
-          if (action === 'GET_USER_ACCOUNT')  return Promise.resolve({ address: 'QabcDEF1234567890abcDEF1234567890abcDEF12', name: 'devuser', publicKey: 'devpubkey' });
-          if (action === 'JOIN_GROUP')         return delay(800).then(() => ({ groupId: opts.groupId }));
-          if (action === 'LEAVE_GROUP')        return delay(600).then(() => ({ groupId: opts.groupId }));
-          if (action === 'INVITE_TO_GROUP')    return delay(700).then(() => ({ groupId: opts.groupId, inviteeAddress: opts.inviteeAddress }));
-          if (action === 'UPDATE_GROUP')       return delay(900).then(() => ({ groupId: opts.groupId }));
-          if (action === 'OPEN_NEW_TAB') { console.log('[mock] OPEN_NEW_TAB', opts.qortalLink); return Promise.resolve(); }
-          console.warn('[mock qortalRequest] unhandled action:', action, opts);
-          return Promise.resolve(null);
-        };
-      }
-    </script>
-    <script type="module" src="/src/main.tsx"></script>
+<script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
