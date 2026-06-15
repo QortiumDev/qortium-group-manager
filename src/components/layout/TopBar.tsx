@@ -12,8 +12,8 @@ import { themeAtom } from '../../state/atoms';
 import { EnumTheme } from '../../types';
 
 const NAV = [
-  { path: '/',             icon: <SearchIcon fontSize="small" />,   label: 'Browse Groups' },
-  { path: '/my-groups',    icon: <GroupsIcon fontSize="small" />,   label: 'My Groups'     },
+  { path: '/',             icon: <GroupsIcon fontSize="small" />,   label: 'My Groups'     },
+  { path: '/browse',       icon: <SearchIcon fontSize="small" />,   label: 'Browse Groups' },
   { path: '/create-group', icon: <GroupAddIcon fontSize="small" />, label: 'Create Group'  },
 ];
 

@@ -56,3 +56,31 @@ export async function updateGroup(params: UpdateGroupParams): Promise<void> {
     newMaximumBlockDelay: params.maximumBlockDelay,
   });
 }
+
+export async function addGroupAdmin(groupId: number, member: string): Promise<void> {
+  await qdnRequest({ action: 'ADD_GROUP_ADMIN', groupId, member });
+}
+
+export async function removeGroupAdmin(groupId: number, admin: string): Promise<void> {
+  await qdnRequest({ action: 'REMOVE_GROUP_ADMIN', groupId, admin });
+}
+
+export async function kickFromGroup(groupId: number, member: string, reason?: string): Promise<void> {
+  await qdnRequest({ action: 'GROUP_KICK', groupId, member, ...(reason ? { reason } : {}) });
+}
+
+export async function banFromGroup(groupId: number, offender: string, reason?: string, timeToLive?: number): Promise<void> {
+  await qdnRequest({ action: 'GROUP_BAN', groupId, offender, ...(reason ? { reason } : {}), ...(timeToLive !== undefined ? { timeToLive } : {}) });
+}
+
+export async function cancelGroupBan(groupId: number, member: string): Promise<void> {
+  await qdnRequest({ action: 'CANCEL_GROUP_BAN', groupId, member });
+}
+
+export async function getMintingStatus(address: string): Promise<import('../types').MintingStatus> {
+  return qdnRequest({ action: 'GET_MINTING_STATUS', address }) as Promise<import('../types').MintingStatus>;
+}
+
+export async function startMinting(): Promise<import('../types').StartMintingResult> {
+  return qdnRequest({ action: 'START_MINTING' }) as Promise<import('../types').StartMintingResult>;
+}

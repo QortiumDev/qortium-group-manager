@@ -27,7 +27,7 @@ function MyGroupRow({ group, isOwner, isAdmin, onLeft }: { group: GroupData; isO
   const [status, setStatus] = useState<Status>(null);
 
   async function handleLeave(e: React.MouseEvent) {
-    e.stopPropagation();
+    e.stopPropagation(); e.preventDefault();
     setBusy(true); setStatus(null);
     try {
       await leaveGroup(group.groupId);
@@ -39,8 +39,17 @@ function MyGroupRow({ group, isOwner, isAdmin, onLeft }: { group: GroupData; isO
   }
 
   return (
-    <Box sx={{ border: `${tokens.shape.borderWidth} solid ${c.borderLight}`, borderRadius: `${tokens.shape.radius}px`, bgcolor: c.surface, p: 2.5 }}>
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 0.75, cursor: 'pointer' }} onClick={() => navigate(`/group/${group.groupId}`)}>
+    <Box
+      onClick={() => navigate(`/group/${group.groupId}`)}
+      sx={{
+        border: `${tokens.shape.borderWidth} solid ${c.borderLight}`,
+        borderRadius: `${tokens.shape.radius}px`,
+        bgcolor: c.surface, p: 2.5,
+        cursor: 'pointer', transition: '0.15s ease',
+        '&:hover': { borderColor: c.accent },
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 0.75 }}>
         <Typography sx={{ fontSize: '0.95rem', fontWeight: tokens.typography.weightBold, color: c.textPrimary, flex: 1 }}>
           {group.groupName}
         </Typography>
@@ -56,7 +65,7 @@ function MyGroupRow({ group, isOwner, isAdmin, onLeft }: { group: GroupData; isO
         </Typography>
       )}
 
-      {status && <Alert severity={status.type} sx={{ mb: 1, fontSize: '0.72rem', py: 0 }}>{status.msg}</Alert>}
+      {status && <Alert severity={status.type} sx={{ mb: 1, fontSize: '0.72rem', py: 0 }} onClick={e => e.stopPropagation()}>{status.msg}</Alert>}
 
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -344,7 +353,7 @@ export function MyGroupsPage() {
         <Box sx={{ border: `${tokens.shape.borderWidth} dashed ${c.borderLight}`, borderRadius: `${tokens.shape.radius}px`, p: 4, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5 }}>
           <GroupsIcon sx={{ fontSize: '2rem', color: c.textSecondary }} />
           <Typography sx={{ fontSize: '0.85rem', color: c.textSecondary }}>You haven't joined any groups yet.</Typography>
-          <Button variant="contained" disableElevation size="small" onClick={() => navigate('/')}
+          <Button variant="contained" disableElevation size="small" onClick={() => navigate('/browse')}
             sx={{ bgcolor: c.accent, color: c.accentText, borderRadius: '50px', fontSize: '0.75rem', px: 2, '&:hover': { bgcolor: c.accentHover } }}>
             Browse Groups
           </Button>

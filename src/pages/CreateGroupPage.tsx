@@ -92,7 +92,7 @@ export function CreateGroupPage() {
           <Box sx={{ display: 'flex', gap: 1.5, mt: 1 }}>
             <Button
               variant="contained" disableElevation
-              onClick={() => navigate('/my-groups')}
+              onClick={() => navigate('/')}
               sx={{ bgcolor: c.accent, color: c.accentText, borderRadius: '50px', fontSize: '0.78rem', px: 2.5, '&:hover': { bgcolor: c.accentHover } }}
             >
               My Groups

@@ -1,8 +1,10 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box, Button, CircularProgress, Typography, Alert, Chip,
   TextField, Select, MenuItem, FormControl, InputLabel, Switch, FormControlLabel,
+  IconButton, Menu, MenuItem as MuiMenuItem,
+  Dialog, DialogTitle, DialogContent, DialogActions,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import PeopleIcon from '@mui/icons-material/People';
@@ -10,21 +12,157 @@ import LockOpenIcon from '@mui/icons-material/LockOpen';
 import LockIcon from '@mui/icons-material/Lock';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import EditIcon from '@mui/icons-material/Edit';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import BlockIcon from '@mui/icons-material/Block';
 import { useAtomValue } from 'jotai';
 import { useColors } from '../theme/ColorTokensContext';
 import { tokens } from '../theme/tokens';
 import { accountAtom } from '../state/atoms';
-import { fetchGroup, fetchGroupMembers, fetchAdminRequests, fetchPrimaryNames } from '../api/rest';
-import { joinGroup, leaveGroup, inviteToGroup, updateGroup } from '../api/qortal';
+import { fetchGroup, fetchGroupMembers, fetchAdminRequests, fetchPrimaryNames, fetchMyJoinRequests, fetchGroupBans, fetchMemberKicks } from '../api/rest';
+import {
+  joinGroup, leaveGroup, inviteToGroup, updateGroup,
+  getMintingStatus, startMinting,
+  addGroupAdmin, removeGroupAdmin, kickFromGroup, banFromGroup, cancelGroupBan,
+} from '../api/qortal';
 import { AddressLink } from '../components/common/AddressLink';
-import type { GroupData, GroupMember, GroupJoinRequest } from '../types';
+import type { GroupData, GroupMember, GroupJoinRequest, MintingStatus, GroupBan, GroupKick } from '../types';
 
 const MEMBER_LIMIT = 20;
-
 const APPROVAL_THRESHOLDS = ['NONE', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX'];
 
-function MemberRow({ member }: { member: GroupMember }) {
+// ─── BanRow ─────────────────────────────────────────────────────────────────
+
+interface BanRowProps {
+  ban: GroupBan;
+  canUnban: boolean;
+  onUnbanned: (offender: string) => void;
+}
+
+function BanRow({ ban, canUnban, onUnbanned }: BanRowProps) {
   const c = useColors();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr]   = useState<string | null>(null);
+
+  async function handleUnban() {
+    setBusy(true); setErr(null);
+    try {
+      await cancelGroupBan(ban.groupId, ban.offender);
+      onUnbanned(ban.offender);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally { setBusy(false); }
+  }
+
+  const offenderDisplay = ban.offenderName || ban.offender.slice(0, 12) + '…';
+  const adminDisplay    = ban.adminName    || ban.admin.slice(0, 12) + '…';
+  const bannedDate      = new Date(ban.banned).toLocaleDateString();
+  const expiryLabel     = ban.expiry ? new Date(ban.expiry).toLocaleDateString() : 'Permanent';
+
+  return (
+    <Box sx={{
+      display: 'flex', alignItems: 'flex-start', gap: 1.5,
+      px: 2, py: 1.25,
+      borderBottom: `1px solid ${c.borderLight}`, '&:last-child': { borderBottom: 'none' },
+    }}>
+      <BlockIcon sx={{ fontSize: '0.9rem', color: c.error, mt: '2px', flexShrink: 0 }} />
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography sx={{ fontSize: '0.85rem', fontWeight: tokens.typography.weightBold, color: c.textPrimary }}>
+          {offenderDisplay}
+        </Typography>
+        <Typography sx={{ fontSize: '0.68rem', color: c.textSecondary, lineHeight: 1.5 }}>
+          Banned {bannedDate} by {adminDisplay} · {expiryLabel}
+          {ban.reason && <> · <Box component="span" sx={{ fontStyle: 'italic' }}>"{ban.reason}"</Box></>}
+        </Typography>
+        {err && <Typography sx={{ fontSize: '0.68rem', color: c.error, mt: 0.25 }}>{err}</Typography>}
+      </Box>
+      {canUnban && (
+        <Button
+          variant="outlined" size="small" disabled={busy}
+          onClick={() => void handleUnban()}
+          sx={{ borderColor: c.accent, color: c.accent, borderRadius: '50px', fontSize: '0.65rem', px: 1.5, flexShrink: 0, '&:hover': { bgcolor: `${c.accent}10` }, '&.Mui-disabled': { opacity: 0.35 } }}
+        >
+          {busy ? <CircularProgress size={10} sx={{ color: c.accent }} /> : 'Unban'}
+        </Button>
+      )}
+    </Box>
+  );
+}
+
+// ─── MemberRow ───────────────────────────────────────────────────────────────
+
+interface MemberRowProps {
+  member: GroupMember;
+  groupId: number;
+  groupOwnerAddress: string;
+  viewerAddress?: string;
+  isViewerOwner: boolean;
+  isViewerAdmin: boolean;
+  onAdminToggled: (address: string, nowAdmin: boolean) => void;
+  onMemberRemoved: (address: string) => void;
+}
+
+function MemberRow({
+  member, groupId, groupOwnerAddress, viewerAddress,
+  isViewerOwner, isViewerAdmin, onAdminToggled, onMemberRemoved,
+}: MemberRowProps) {
+  const c = useColors();
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const [dialog, setDialog] = useState<'kick' | 'ban' | null>(null);
+  const [reason, setReason] = useState('');
+  const [banDuration, setBanDuration] = useState('0');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const isSelf      = viewerAddress === member.member;
+  const isGroupOwner = groupOwnerAddress === member.member;
+  const canKickBan   = !isSelf && !isGroupOwner && (isViewerOwner || isViewerAdmin);
+  const canManageAdmin = !isSelf && !isGroupOwner && isViewerOwner;
+  const hasActions   = canKickBan || canManageAdmin;
+
+  function closeDialog() {
+    setDialog(null); setReason(''); setBanDuration('0'); setErr(null);
+  }
+
+  async function handleAddAdmin() {
+    setBusy(true); setErr(null);
+    try {
+      await addGroupAdmin(groupId, member.member);
+      onAdminToggled(member.member, true);
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); setMenuAnchor(null); }
+  }
+
+  async function handleRemoveAdmin() {
+    setBusy(true); setErr(null);
+    try {
+      await removeGroupAdmin(groupId, member.member);
+      onAdminToggled(member.member, false);
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); setMenuAnchor(null); }
+  }
+
+  async function handleKick() {
+    setBusy(true); setErr(null);
+    try {
+      await kickFromGroup(groupId, member.member, reason.trim() || undefined);
+      onMemberRemoved(member.member);
+      closeDialog();
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  }
+
+  async function handleBan() {
+    setBusy(true); setErr(null);
+    try {
+      await banFromGroup(groupId, member.member, reason.trim() || undefined, parseInt(banDuration) || 0);
+      onMemberRemoved(member.member);
+      closeDialog();
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  }
+
+  const displayName = member.primaryName || member.member;
+
   return (
     <Box sx={{
       display: 'flex', alignItems: 'center', gap: 1.5,
@@ -37,10 +175,8 @@ function MemberRow({ member }: { member: GroupMember }) {
             {member.primaryName}
           </Typography>
         )}
-        <AddressLink
-          address={member.member}
-          monoColor={member.primaryName ? c.textSecondary : c.textPrimary}
-        />
+        <AddressLink address={member.member} monoColor={member.primaryName ? c.textSecondary : c.textPrimary} />
+        {err && <Typography sx={{ fontSize: '0.68rem', color: c.error, mt: 0.25 }}>{err}</Typography>}
       </Box>
       {member.isAdmin && (
         <Chip label="Admin" size="small" sx={{ fontSize: '0.58rem', height: 16, bgcolor: `${c.success}22`, color: c.success, border: `1px solid ${c.success}44` }} />
@@ -50,9 +186,81 @@ function MemberRow({ member }: { member: GroupMember }) {
           {new Date(member.joined).toLocaleDateString()}
         </Typography>
       )}
+
+      {hasActions && (
+        <>
+          <IconButton
+            size="small" disabled={busy}
+            onClick={e => setMenuAnchor(e.currentTarget)}
+            sx={{ color: c.textSecondary, '&:hover': { color: c.accent }, p: 0.5 }}
+          >
+            {busy
+              ? <CircularProgress size={14} sx={{ color: c.textSecondary }} />
+              : <MoreVertIcon sx={{ fontSize: '1rem' }} />}
+          </IconButton>
+
+          <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}
+            slotProps={{ paper: { sx: { fontSize: '0.82rem', minWidth: 140 } } }}>
+            {canManageAdmin && !member.isAdmin && (
+              <MuiMenuItem onClick={() => void handleAddAdmin()} sx={{ fontSize: '0.82rem' }}>Make admin</MuiMenuItem>
+            )}
+            {canManageAdmin && member.isAdmin && (
+              <MuiMenuItem onClick={() => void handleRemoveAdmin()} sx={{ fontSize: '0.82rem' }}>Remove admin</MuiMenuItem>
+            )}
+            {canKickBan && (
+              <MuiMenuItem onClick={() => { setMenuAnchor(null); setDialog('kick'); }} sx={{ fontSize: '0.82rem' }}>Kick</MuiMenuItem>
+            )}
+            {canKickBan && (
+              <MuiMenuItem onClick={() => { setMenuAnchor(null); setDialog('ban'); }} sx={{ fontSize: '0.82rem', color: c.error }}>Ban</MuiMenuItem>
+            )}
+          </Menu>
+
+          <Dialog open={dialog === 'kick'} onClose={closeDialog} maxWidth="xs" fullWidth>
+            <DialogTitle sx={{ fontSize: '0.95rem', fontWeight: tokens.typography.weightBold, pb: 1 }}>Kick member</DialogTitle>
+            <DialogContent sx={{ pt: '8px !important', display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              <Typography sx={{ fontSize: '0.82rem', color: c.textSecondary }}>
+                Remove <Box component="span" sx={{ color: c.textPrimary, fontWeight: tokens.typography.weightBold }}>{displayName}</Box> from the group. They can rejoin if the group is open.
+              </Typography>
+              <TextField label="Reason (optional)" size="small" fullWidth value={reason} onChange={e => setReason(e.target.value)} inputProps={{ maxLength: 256 }}
+                sx={{ '& .MuiOutlinedInput-root': { fontSize: '0.85rem', '& fieldset': { borderColor: c.borderLight }, '&:hover fieldset': { borderColor: c.accent }, '&.Mui-focused fieldset': { borderColor: c.accent } }, '& label': { fontSize: '0.82rem' } }} />
+              {err && <Alert severity="error" sx={{ fontSize: '0.78rem', py: 0 }}>{err}</Alert>}
+            </DialogContent>
+            <DialogActions sx={{ px: 2.5, pb: 2 }}>
+              <Button onClick={closeDialog} disabled={busy} sx={{ fontSize: '0.78rem', color: c.textSecondary }}>Cancel</Button>
+              <Button variant="contained" disableElevation disabled={busy} onClick={() => void handleKick()}
+                sx={{ bgcolor: c.error, color: '#fff', borderRadius: '50px', fontSize: '0.78rem', px: 2, '&:hover': { bgcolor: c.error }, '&.Mui-disabled': { opacity: 0.35, bgcolor: c.error, color: '#fff' } }}>
+                {busy ? <CircularProgress size={13} sx={{ color: '#fff' }} /> : 'Kick'}
+              </Button>
+            </DialogActions>
+          </Dialog>
+
+          <Dialog open={dialog === 'ban'} onClose={closeDialog} maxWidth="xs" fullWidth>
+            <DialogTitle sx={{ fontSize: '0.95rem', fontWeight: tokens.typography.weightBold, pb: 1 }}>Ban member</DialogTitle>
+            <DialogContent sx={{ pt: '8px !important', display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              <Typography sx={{ fontSize: '0.82rem', color: c.textSecondary }}>
+                Ban <Box component="span" sx={{ color: c.textPrimary, fontWeight: tokens.typography.weightBold }}>{displayName}</Box> from the group. Banned members cannot rejoin.
+              </Typography>
+              <TextField label="Reason (optional)" size="small" fullWidth value={reason} onChange={e => setReason(e.target.value)} inputProps={{ maxLength: 256 }}
+                sx={{ '& .MuiOutlinedInput-root': { fontSize: '0.85rem', '& fieldset': { borderColor: c.borderLight }, '&:hover fieldset': { borderColor: c.accent }, '&.Mui-focused fieldset': { borderColor: c.accent } }, '& label': { fontSize: '0.82rem' } }} />
+              <TextField label="Duration (seconds, 0 = permanent)" size="small" fullWidth type="number" value={banDuration} onChange={e => setBanDuration(e.target.value)} inputProps={{ min: 0 }}
+                sx={{ '& .MuiOutlinedInput-root': { fontSize: '0.85rem', '& fieldset': { borderColor: c.borderLight }, '&:hover fieldset': { borderColor: c.accent }, '&.Mui-focused fieldset': { borderColor: c.accent } }, '& label': { fontSize: '0.82rem' } }} />
+              {err && <Alert severity="error" sx={{ fontSize: '0.78rem', py: 0 }}>{err}</Alert>}
+            </DialogContent>
+            <DialogActions sx={{ px: 2.5, pb: 2 }}>
+              <Button onClick={closeDialog} disabled={busy} sx={{ fontSize: '0.78rem', color: c.textSecondary }}>Cancel</Button>
+              <Button variant="contained" disableElevation disabled={busy} onClick={() => void handleBan()}
+                sx={{ bgcolor: c.error, color: '#fff', borderRadius: '50px', fontSize: '0.78rem', px: 2, '&:hover': { bgcolor: c.error }, '&.Mui-disabled': { opacity: 0.35, bgcolor: c.error, color: '#fff' } }}>
+                {busy ? <CircularProgress size={13} sx={{ color: '#fff' }} /> : 'Ban'}
+              </Button>
+            </DialogActions>
+          </Dialog>
+        </>
+      )}
     </Box>
   );
 }
+
+// ─── JoinRequestRow ──────────────────────────────────────────────────────────
 
 interface JoinRequestRowProps {
   req: GroupJoinRequest;
@@ -79,23 +287,20 @@ function JoinRequestRow({ req, primaryName, onApproved }: JoinRequestRowProps) {
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 0.75 }}>
       <Box sx={{ flex: 1, minWidth: 0 }}>
         {primaryName && (
-          <Typography sx={{ fontSize: '0.82rem', fontWeight: tokens.typography.weightBold, color: c.textPrimary }}>
-            {primaryName}
-          </Typography>
+          <Typography sx={{ fontSize: '0.82rem', fontWeight: tokens.typography.weightBold, color: c.textPrimary }}>{primaryName}</Typography>
         )}
-        <AddressLink
-          address={req.joiner}
-          monoColor={primaryName ? c.textSecondary : c.textPrimary}
-        />
+        <AddressLink address={req.joiner} monoColor={primaryName ? c.textSecondary : c.textPrimary} />
         {err && <Typography sx={{ fontSize: '0.68rem', color: c.error }}>{err}</Typography>}
       </Box>
-      <Button variant="contained" disableElevation size="small" disabled={busy} onClick={handleApprove}
+      <Button variant="contained" disableElevation size="small" disabled={busy} onClick={() => void handleApprove()}
         sx={{ bgcolor: c.accent, color: c.accentText, borderRadius: '50px', fontSize: '0.68rem', px: 1.5, flexShrink: 0, '&:hover': { bgcolor: c.accentHover }, '&.Mui-disabled': { opacity: 0.35, bgcolor: c.accent, color: c.accentText } }}>
         {busy ? <CircularProgress size={10} sx={{ color: c.accentText }} /> : 'Approve'}
       </Button>
     </Box>
   );
 }
+
+// ─── GroupPage ───────────────────────────────────────────────────────────────
 
 interface EditForm {
   description: string;
@@ -121,6 +326,7 @@ export function GroupPage() {
   const [pendingRequests, setPending]   = useState<GroupJoinRequest[]>([]);
   const [reqNames, setReqNames]         = useState<Map<string, string | null>>(new Map());
   const [isMember, setIsMember]         = useState(false);
+  const [isPending, setIsPending]       = useState(false);
   const [isOwner, setIsOwner]           = useState(false);
   const [isAdmin, setIsAdmin]           = useState(false);
   const [loading, setLoading]           = useState(true);
@@ -128,22 +334,35 @@ export function GroupPage() {
   const [actionBusy, setActionBusy]     = useState(false);
   const [actionStatus, setActionStatus] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
-  const [showEdit, setShowEdit]         = useState(false);
-  const [editForm, setEditForm]         = useState<EditForm>({ description: '', isOpen: true, approvalThreshold: 'NONE', minBlock: 5, maxBlock: 20 });
-  const [editBusy, setEditBusy]         = useState(false);
-  const [editStatus, setEditStatus]     = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  const [mintingStatus, setMintingStatus]           = useState<MintingStatus | null>(null);
+  const [mintingBusy, setMintingBusy]               = useState(false);
+  const [rewardSharePending, setRewardSharePending] = useState(false);
+  const [mintingError, setMintingError]             = useState<string | null>(null);
 
+  const [showEdit, setShowEdit]   = useState(false);
+  const [editForm, setEditForm]   = useState<EditForm>({ description: '', isOpen: true, approvalThreshold: 'NONE', minBlock: 5, maxBlock: 20 });
+  const [editBusy, setEditBusy]   = useState(false);
+  const [editStatus, setEditStatus] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+
+  const [bans, setBans]         = useState<GroupBan[]>([]);
+  const [bansLoaded, setBansLoaded] = useState(false);
+  const [viewerKick, setViewerKick] = useState<GroupKick | null>(null);
+
+  // Main data load
   useEffect(() => {
     if (!id) return;
     const groupId = parseInt(id);
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
+    setBans([]); setBansLoaded(false); setViewerKick(null);
 
     Promise.all([
       fetchGroup(groupId),
       fetchGroupMembers(groupId, MEMBER_LIMIT, 0),
     ]).then(async ([g, gm]) => {
       setGroup(g);
+      if (g.isMintingGroup && account) {
+        getMintingStatus(account.address).then(setMintingStatus).catch(() => {});
+      }
       setEditForm({
         description: g.description ?? '',
         isOpen: g.isOpen,
@@ -153,10 +372,8 @@ export function GroupPage() {
       });
 
       const rawMembers = gm.groupMembers ?? [];
-      // Fetch primary names for all members
       const nameMap = await fetchPrimaryNames(rawMembers.map(m => m.member));
       const membersWithNames = rawMembers.map(m => ({ ...m, primaryName: nameMap.get(m.member) ?? undefined }));
-
       setMembers(membersWithNames);
       setMemberCount(gm.memberCount ?? g.memberCount);
       setAdminCount(gm.adminCount ?? 0);
@@ -185,9 +402,43 @@ export function GroupPage() {
           setReqNames(names);
         }
       });
+      void fetchMyJoinRequests(account.address).then(reqs => {
+        setIsPending(reqs.some(r => r.groupId === groupId));
+      });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, account?.address]);
+
+  // Load bans
+  useEffect(() => {
+    if (!id) return;
+    const groupId = parseInt(id);
+    setBansLoaded(false);
+    void fetchGroupBans(groupId).then(async rawBans => {
+      if (rawBans.length === 0) { setBans([]); setBansLoaded(true); return; }
+      const allAddrs = [...new Set([...rawBans.map(b => b.offender), ...rawBans.map(b => b.admin)])];
+      const nameMap = await fetchPrimaryNames(allAddrs);
+      setBans(rawBans.map(b => ({
+        ...b,
+        offenderName: nameMap.get(b.offender) ?? undefined,
+        adminName:    nameMap.get(b.admin)     ?? undefined,
+      })));
+      setBansLoaded(true);
+    }).catch(() => setBansLoaded(true));
+  }, [id]);
+
+  // Load viewer's kick history for this group
+  useEffect(() => {
+    if (!id || !account) return;
+    void fetchMemberKicks(account.address, parseInt(id), 1).then(kicks => {
+      setViewerKick(kicks[0] ?? null);
+    }).catch(() => {});
+  }, [id, account?.address]);
+
+  const viewerBan = useMemo(
+    () => (account && bansLoaded) ? (bans.find(b => b.offender === account.address) ?? null) : null,
+    [bans, bansLoaded, account],
+  );
 
   const loadMoreMembers = useCallback(async () => {
     if (!id) return;
@@ -207,8 +458,13 @@ export function GroupPage() {
     setActionBusy(true); setActionStatus(null);
     try {
       await joinGroup(group.groupId);
-      setIsMember(true);
-      setActionStatus({ type: 'success', msg: `Joined "${group.groupName}".` });
+      if (group.isOpen) {
+        setIsMember(true);
+        setActionStatus({ type: 'success', msg: `Joined "${group.groupName}".` });
+      } else {
+        setIsPending(true);
+        setActionStatus({ type: 'success', msg: `Join request sent for "${group.groupName}". Waiting for approval.` });
+      }
     } catch (e) {
       setActionStatus({ type: 'error', msg: e instanceof Error ? e.message : String(e) });
     } finally { setActionBusy(false); }
@@ -224,6 +480,19 @@ export function GroupPage() {
     } catch (e) {
       setActionStatus({ type: 'error', msg: e instanceof Error ? e.message : String(e) });
     } finally { setActionBusy(false); }
+  }
+
+  async function handleStartMinting() {
+    if (!account || mintingBusy) return;
+    setMintingBusy(true); setMintingError(null);
+    try {
+      const result = await startMinting();
+      if (result.rewardSharePending) setRewardSharePending(true);
+      const updated = await getMintingStatus(account.address);
+      setMintingStatus(updated);
+    } catch (e) {
+      setMintingError(e instanceof Error ? e.message : String(e));
+    } finally { setMintingBusy(false); }
   }
 
   async function handleUpdate() {
@@ -244,6 +513,17 @@ export function GroupPage() {
     } catch (e) {
       setEditStatus({ type: 'error', msg: e instanceof Error ? e.message : String(e) });
     } finally { setEditBusy(false); }
+  }
+
+  function handleAdminToggled(address: string, nowAdmin: boolean) {
+    setMembers(prev => prev.map(m => m.member === address ? { ...m, isAdmin: nowAdmin } : m));
+    setAdminCount(prev => prev + (nowAdmin ? 1 : -1));
+    if (account?.address === address) setIsAdmin(nowAdmin);
+  }
+
+  function handleMemberRemoved(address: string) {
+    setMembers(prev => prev.filter(m => m.member !== address));
+    setMemberCount(prev => Math.max(0, prev - 1));
   }
 
   if (loading) {
@@ -316,22 +596,65 @@ export function GroupPage() {
         </Box>
       </Box>
 
-      {/* Action + status */}
+      {/* Viewer ban notice */}
+      {account && !isOwner && !isMember && !isPending && viewerBan && (
+        <Alert severity="warning" sx={{ mb: 2, fontSize: '0.82rem' }}>
+          <strong>You are banned from this group.</strong>
+          {viewerBan.reason && <> Reason: <em>"{viewerBan.reason}"</em>.</>}
+          {' '}{viewerBan.expiry
+            ? `Ban expires ${new Date(viewerBan.expiry).toLocaleDateString()}.`
+            : 'Permanent ban.'}
+        </Alert>
+      )}
+
+      {/* Viewer kick notice (only if not banned) */}
+      {account && !isOwner && !isMember && !isPending && !viewerBan && viewerKick && (
+        <Alert severity="info" sx={{ mb: 2, fontSize: '0.82rem' }}>
+          You were kicked from this group on {new Date(viewerKick.timestamp).toLocaleDateString()}.
+          {viewerKick.reason && <> Reason: <em>"{viewerKick.reason}"</em>.</>}
+          {' '}You can still try to rejoin.
+        </Alert>
+      )}
+
+      {/* Action status */}
       {actionStatus && <Alert severity={actionStatus.type} sx={{ mb: 2, fontSize: '0.78rem', py: 0 }}>{actionStatus.msg}</Alert>}
 
-      {account && !isOwner && (
+      {/* Join / Leave / Pending — not shown if banned */}
+      {account && !isOwner && !viewerBan && (
         <Box sx={{ mb: 3 }}>
           {isMember ? (
-            <Button variant="outlined" disabled={actionBusy} onClick={handleLeave}
+            <Button variant="outlined" disabled={actionBusy} onClick={() => void handleLeave()}
               sx={{ borderColor: c.error, color: c.error, borderRadius: '50px', fontSize: '0.75rem', px: 2.5, '&:hover': { bgcolor: `${c.error}12`, borderColor: c.error }, '&.Mui-disabled': { opacity: 0.35 } }}>
               {actionBusy ? <CircularProgress size={14} sx={{ color: c.error }} /> : 'Leave group'}
             </Button>
+          ) : isPending ? (
+            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, px: 2, py: 0.75, border: `1px solid ${c.borderLight}`, borderRadius: '50px', fontSize: '0.75rem', color: c.textSecondary }}>
+              <CircularProgress size={10} sx={{ color: c.textSecondary }} />
+              Join request pending
+            </Box>
           ) : (
-            <Button variant="contained" disableElevation disabled={actionBusy} onClick={handleJoin}
+            <Button variant="contained" disableElevation disabled={actionBusy} onClick={() => void handleJoin()}
               sx={{ bgcolor: c.accent, color: c.accentText, borderRadius: '50px', fontSize: '0.75rem', px: 2.5, '&:hover': { bgcolor: c.accentHover }, '&.Mui-disabled': { opacity: 0.35, bgcolor: c.accent, color: c.accentText } }}>
               {actionBusy ? <CircularProgress size={14} sx={{ color: c.accentText }} /> : 'Join group'}
             </Button>
           )}
+        </Box>
+      )}
+
+      {/* Minting group: start minting */}
+      {group.isMintingGroup && account && isMember && mintingStatus && mintingStatus.isMinting !== true && (
+        <Box sx={{ mb: 3 }}>
+          <Button
+            variant="contained" disableElevation
+            disabled={mintingBusy || mintingStatus.keyOnNode !== false || rewardSharePending}
+            onClick={() => void handleStartMinting()}
+            sx={{ bgcolor: c.accent, color: c.accentText, borderRadius: '50px', fontSize: '0.75rem', px: 2.5, '&:hover': { bgcolor: c.accentHover }, '&.Mui-disabled': { opacity: 0.35, bgcolor: c.accent, color: c.accentText } }}
+          >
+            {mintingBusy ? <CircularProgress size={14} sx={{ color: c.accentText }} />
+              : rewardSharePending ? 'Authorization Pending'
+              : 'Start Minting'}
+          </Button>
+          {mintingError && <Typography sx={{ fontSize: '0.72rem', color: c.error, mt: 0.75 }}>{mintingError}</Typography>}
         </Box>
       )}
 
@@ -345,51 +668,38 @@ export function GroupPage() {
 
           {showEdit && (
             <Box sx={{ mt: 2, border: `${tokens.shape.borderWidth} solid ${c.borderLight}`, borderRadius: `${tokens.shape.radius}px`, p: 2.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <TextField
-                label="Description" size="small" multiline rows={3} fullWidth
-                value={editForm.description}
+              <TextField label="Description" size="small" multiline rows={3} fullWidth value={editForm.description}
                 onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
-                sx={{ '& .MuiOutlinedInput-root': { fontSize: '0.85rem', '& fieldset': { borderColor: c.borderLight }, '&:hover fieldset': { borderColor: c.accent }, '&.Mui-focused fieldset': { borderColor: c.accent } }, '& label': { fontSize: '0.82rem' } }}
-              />
+                sx={{ '& .MuiOutlinedInput-root': { fontSize: '0.85rem', '& fieldset': { borderColor: c.borderLight }, '&:hover fieldset': { borderColor: c.accent }, '&.Mui-focused fieldset': { borderColor: c.accent } }, '& label': { fontSize: '0.82rem' } }} />
 
               <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
                 <FormControlLabel
                   control={<Switch checked={editForm.isOpen} onChange={e => setEditForm(f => ({ ...f, isOpen: e.target.checked }))} size="small" sx={{ '& .MuiSwitch-thumb': { bgcolor: c.accent }, '& .Mui-checked + .MuiSwitch-track': { bgcolor: c.accent } }} />}
                   label={<Typography sx={{ fontSize: '0.82rem', color: c.textSecondary }}>Open group</Typography>}
                 />
-
                 <FormControl size="small" sx={{ minWidth: 160 }}>
                   <InputLabel sx={{ fontSize: '0.82rem' }}>Approval threshold</InputLabel>
-                  <Select
-                    label="Approval threshold"
-                    value={editForm.approvalThreshold}
+                  <Select label="Approval threshold" value={editForm.approvalThreshold}
                     onChange={e => setEditForm(f => ({ ...f, approvalThreshold: e.target.value }))}
-                    sx={{ fontSize: '0.82rem', '& fieldset': { borderColor: c.borderLight } }}
-                  >
+                    sx={{ fontSize: '0.82rem', '& fieldset': { borderColor: c.borderLight } }}>
                     {APPROVAL_THRESHOLDS.map(t => <MenuItem key={t} value={t} sx={{ fontSize: '0.82rem' }}>{t}</MenuItem>)}
                   </Select>
                 </FormControl>
               </Box>
 
               <Box sx={{ display: 'flex', gap: 2 }}>
-                <TextField
-                  label="Min block delay" size="small" type="number"
-                  value={editForm.minBlock}
+                <TextField label="Min block delay" size="small" type="number" value={editForm.minBlock}
                   onChange={e => setEditForm(f => ({ ...f, minBlock: parseInt(e.target.value) || 0 }))}
-                  sx={{ width: 140, '& .MuiOutlinedInput-root': { fontSize: '0.85rem', '& fieldset': { borderColor: c.borderLight }, '&:hover fieldset': { borderColor: c.accent }, '&.Mui-focused fieldset': { borderColor: c.accent } }, '& label': { fontSize: '0.82rem' } }}
-                />
-                <TextField
-                  label="Max block delay" size="small" type="number"
-                  value={editForm.maxBlock}
+                  sx={{ width: 140, '& .MuiOutlinedInput-root': { fontSize: '0.85rem', '& fieldset': { borderColor: c.borderLight }, '&:hover fieldset': { borderColor: c.accent }, '&.Mui-focused fieldset': { borderColor: c.accent } }, '& label': { fontSize: '0.82rem' } }} />
+                <TextField label="Max block delay" size="small" type="number" value={editForm.maxBlock}
                   onChange={e => setEditForm(f => ({ ...f, maxBlock: parseInt(e.target.value) || 0 }))}
-                  sx={{ width: 140, '& .MuiOutlinedInput-root': { fontSize: '0.85rem', '& fieldset': { borderColor: c.borderLight }, '&:hover fieldset': { borderColor: c.accent }, '&.Mui-focused fieldset': { borderColor: c.accent } }, '& label': { fontSize: '0.82rem' } }}
-                />
+                  sx={{ width: 140, '& .MuiOutlinedInput-root': { fontSize: '0.85rem', '& fieldset': { borderColor: c.borderLight }, '&:hover fieldset': { borderColor: c.accent }, '&.Mui-focused fieldset': { borderColor: c.accent } }, '& label': { fontSize: '0.82rem' } }} />
               </Box>
 
               {editStatus && <Alert severity={editStatus.type} sx={{ fontSize: '0.72rem', py: 0 }}>{editStatus.msg}</Alert>}
 
               <Box>
-                <Button variant="contained" disableElevation size="small" disabled={editBusy} onClick={handleUpdate}
+                <Button variant="contained" disableElevation size="small" disabled={editBusy} onClick={() => void handleUpdate()}
                   sx={{ bgcolor: c.accent, color: c.accentText, borderRadius: '50px', fontSize: '0.75rem', px: 2.5, '&:hover': { bgcolor: c.accentHover }, '&.Mui-disabled': { opacity: 0.35, bgcolor: c.accent, color: c.accentText } }}>
                   {editBusy ? <CircularProgress size={14} sx={{ color: c.accentText }} /> : 'Save changes'}
                 </Button>
@@ -410,12 +720,8 @@ export function GroupPage() {
           </Box>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
             {pendingRequests.map(req => (
-              <JoinRequestRow
-                key={req.joiner}
-                req={req}
-                primaryName={reqNames.get(req.joiner)}
-                onApproved={joiner => setPending(prev => prev.filter(r => r.joiner !== joiner))}
-              />
+              <JoinRequestRow key={req.joiner} req={req} primaryName={reqNames.get(req.joiner)}
+                onApproved={joiner => setPending(prev => prev.filter(r => r.joiner !== joiner))} />
             ))}
           </Box>
         </Box>
@@ -432,17 +738,41 @@ export function GroupPage() {
             <Typography sx={{ fontSize: '0.85rem', color: c.textSecondary }}>No members found.</Typography>
           </Box>
         ) : (
-          members.map(m => <MemberRow key={m.member} member={m} />)
+          members.map(m => (
+            <MemberRow key={m.member} member={m}
+              groupId={group.groupId} groupOwnerAddress={group.owner}
+              viewerAddress={account?.address} isViewerOwner={isOwner} isViewerAdmin={isAdmin}
+              onAdminToggled={handleAdminToggled} onMemberRemoved={handleMemberRemoved} />
+          ))
         )}
       </Box>
 
       {hasMoreMembers && (
-        <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
           <Button variant="outlined" onClick={() => void loadMoreMembers()} disabled={loadingMore}
             sx={{ borderColor: c.accent, color: c.accent, borderRadius: '50px', fontSize: '0.75rem', px: 3, '&:hover': { bgcolor: c.borderLight }, '&.Mui-disabled': { opacity: 0.35 } }}>
             {loadingMore ? <CircularProgress size={14} sx={{ color: c.accent }} /> : 'Load more members'}
           </Button>
         </Box>
+      )}
+
+      {/* Bans list */}
+      {bansLoaded && bans.length > 0 && (
+        <>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+            <Typography sx={{ fontSize: '0.65rem', fontWeight: tokens.typography.weightBold, letterSpacing: '0.14em', textTransform: 'uppercase', color: c.error }}>
+              Banned
+            </Typography>
+            <Chip label={bans.length} size="small" sx={{ fontSize: '0.58rem', height: 16, bgcolor: `${c.error}18`, color: c.error, border: `1px solid ${c.error}33` }} />
+          </Box>
+          <Box sx={{ border: `${tokens.shape.borderWidth} solid ${c.error}33`, borderRadius: `${tokens.shape.radius}px`, bgcolor: c.surface, overflow: 'hidden', mb: 2 }}>
+            {bans.map(ban => (
+              <BanRow key={ban.offender} ban={ban}
+                canUnban={isOwner || isAdmin}
+                onUnbanned={offender => setBans(prev => prev.filter(b => b.offender !== offender))} />
+            ))}
+          </Box>
+        </>
       )}
     </Box>
   );

@@ -1,4 +1,4 @@
-import type { GroupData, GroupMember, GroupMembers, GroupInvite, GroupWithJoinRequests } from '../types';
+import type { GroupData, GroupMember, GroupMembers, GroupInvite, GroupWithJoinRequests, GroupJoinRequest, GroupBan, GroupKick } from '../types';
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path);
@@ -124,5 +124,25 @@ export async function fetchMyInvites(address: string): Promise<GroupInvite[]> {
 export async function fetchAdminRequests(address: string): Promise<GroupWithJoinRequests[]> {
   try {
     return await get<GroupWithJoinRequests[]>(`/groups/joinrequests/admin/${address}`);
+  } catch { return []; }
+}
+
+export async function fetchMyJoinRequests(address: string): Promise<GroupJoinRequest[]> {
+  try {
+    return await get<GroupJoinRequest[]>(`/groups/joinrequests/address/${address}`);
+  } catch { return []; }
+}
+
+export async function fetchGroupBans(groupId: number): Promise<GroupBan[]> {
+  try {
+    return await get<GroupBan[]>(`/groups/bans/${groupId}`);
+  } catch { return []; }
+}
+
+export async function fetchMemberKicks(address: string, groupId?: number, limit = 50): Promise<GroupKick[]> {
+  try {
+    let path = `/groups/kicks/member?address=${encodeURIComponent(address)}&limit=${limit}&reverse=true`;
+    if (groupId !== undefined) path += `&groupId=${groupId}`;
+    return await get<GroupKick[]>(path);
   } catch { return []; }
 }

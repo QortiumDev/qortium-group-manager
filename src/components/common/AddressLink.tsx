@@ -13,15 +13,6 @@ interface Props {
 export function AddressLink({ address, fontSize = '0.72rem', monoColor }: Props) {
   const c = useColors();
 
-  function handleClick(e: React.MouseEvent) {
-    if (!ENABLE_CROSS_APP_LINKS) return;
-    e.stopPropagation();
-    void qdnRequest({
-      action: 'OPEN_NEW_TAB',
-      qortalLink: appLink('chain', `/#/address/${address}`),
-    });
-  }
-
   const truncated = `${address.slice(0, 10)}…${address.slice(-6)}`;
   const color = monoColor ?? c.textSecondary;
 
@@ -36,9 +27,12 @@ export function AddressLink({ address, fontSize = '0.72rem', monoColor }: Props)
   return (
     <Tooltip title={`Open in ${appLabel('chain')}?`} placement="top" arrow>
       <Typography
-        onClick={handleClick}
+        component="a"
+        href={appLink('chain', `/#/address/${address}`)}
+        onClick={(e: React.MouseEvent) => e.stopPropagation()}
         sx={{
           fontSize, fontFamily: 'monospace', color,
+          textDecoration: 'none',
           cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '3px',
           '&:hover': { color: c.accent },
           transition: '0.12s ease',

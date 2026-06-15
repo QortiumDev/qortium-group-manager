@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Box, Button, CircularProgress, InputAdornment,
   TextField, Typography, Alert, Select, MenuItem,
@@ -13,9 +13,9 @@ import { useAtomValue } from 'jotai';
 import { useColors } from '../theme/ColorTokensContext';
 import { tokens } from '../theme/tokens';
 import { accountAtom } from '../state/atoms';
-import { fetchGroups, searchGroups, fetchGroupsByMember } from '../api/rest';
+import { fetchGroups, searchGroups, fetchGroupsByMember, fetchMyJoinRequests, fetchMemberKicks } from '../api/rest';
 import { joinGroup } from '../api/qortal';
-import type { GroupData } from '../types';
+import type { GroupData, GroupKick } from '../types';
 
 const LIMIT = 20;
 type Visibility = 'ALL' | 'OPEN' | 'CLOSED';
@@ -59,7 +59,7 @@ function VisibilityTab({ label, active, onClick }: { label: string; active: bool
   );
 }
 
-function GroupCard({ group, isMember, onJoined }: { group: GroupData; isMember: boolean; onJoined: (id: number) => void }) {
+function GroupCard({ group, isMember, isPending, viewerKick, onJoined }: { group: GroupData; isMember: boolean; isPending: boolean; viewerKick?: GroupKick; onJoined: (id: number, isOpen: boolean) => void }) {
   const c = useColors();
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
@@ -68,7 +68,7 @@ function GroupCard({ group, isMember, onJoined }: { group: GroupData; isMember: 
   async function handleJoin(e: React.MouseEvent) {
     e.stopPropagation();
     setBusy(true); setErr(null);
-    try { await joinGroup(group.groupId); onJoined(group.groupId); }
+    try { await joinGroup(group.groupId); onJoined(group.groupId, group.isOpen); }
     catch (ex) { setErr(ex instanceof Error ? ex.message : String(ex)); }
     finally { setBusy(false); }
   }
@@ -104,6 +104,14 @@ function GroupCard({ group, isMember, onJoined }: { group: GroupData; isMember: 
         </Typography>
       )}
 
+      {viewerKick && !isMember && !isPending && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }} onClick={e => e.stopPropagation()}>
+          <Typography sx={{ fontSize: '0.68rem', color: '#b45309' }}>
+            You were kicked {new Date(viewerKick.timestamp).toLocaleDateString()}
+            {viewerKick.reason && `: "${viewerKick.reason}"`}
+          </Typography>
+        </Box>
+      )}
       {err && <Alert severity="error" sx={{ mb: 1, fontSize: '0.72rem', py: 0 }} onClick={e => e.stopPropagation()}>{err}</Alert>}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <PeopleIcon sx={{ fontSize: '0.8rem', color: c.textSecondary }} />
@@ -114,6 +122,10 @@ function GroupCard({ group, isMember, onJoined }: { group: GroupData; isMember: 
         {isMember ? (
           <Box sx={{ fontSize: '0.65rem', fontWeight: tokens.typography.weightBold, letterSpacing: '0.08em', textTransform: 'uppercase', color: c.accent, border: `1px solid ${c.accent}44`, borderRadius: '3px', px: 0.75, py: '2px' }}>
             Member
+          </Box>
+        ) : isPending ? (
+          <Box sx={{ fontSize: '0.65rem', fontWeight: tokens.typography.weightBold, letterSpacing: '0.08em', textTransform: 'uppercase', color: c.textSecondary, border: `1px solid ${c.borderLight}`, borderRadius: '3px', px: 0.75, py: '2px' }}>
+            Pending
           </Box>
         ) : (
           <Button
@@ -132,15 +144,19 @@ function GroupCard({ group, isMember, onJoined }: { group: GroupData; isMember: 
 export function BrowsePage() {
   const c = useColors();
   const account = useAtomValue(accountAtom);
-  const [inputValue, setInputValue]     = useState('');
-  const [query, setQuery]               = useState('');
+  const [searchParams] = useSearchParams();
+  const initialMember = searchParams.get('member') ?? '';
+  const [inputValue, setInputValue]     = useState(initialMember);
+  const [query, setQuery]               = useState(initialMember);
   const [visibility, setVisibility]     = useState<Visibility>('ALL');
   const [sort, setSort]                 = useState<SortKey>('default');
-  const [memberSearch, setMemberSearch] = useState(false);
+  const [memberSearch, setMemberSearch] = useState(!!initialMember);
   const [groups, setGroups]             = useState<GroupData[]>([]);
-  const [myGroupIds, setMyGroupIds]     = useState<Set<number>>(new Set());
-  const [loading, setLoading]           = useState(true);
-  const [bgLoading, setBgLoading]       = useState(false);
+  const [myGroupIds, setMyGroupIds]           = useState<Set<number>>(new Set());
+  const [pendingGroupIds, setPendingGroupIds] = useState<Set<number>>(new Set());
+  const [viewerKickMap, setViewerKickMap]     = useState<Map<number, GroupKick>>(new Map());
+  const [loading, setLoading]                 = useState(true);
+  const [bgLoading, setBgLoading]             = useState(false);
 
   // Incremented each time search params change; each fetch loop checks it hasn't been superseded.
   const genRef = useRef(0);
@@ -189,12 +205,24 @@ export function BrowsePage() {
     void loadAll(query, visibility, memberSearch);
   }, [query, visibility, memberSearch, loadAll]);
 
-  // Track my group memberships for the Join/Member badge
+  // Track my group memberships, pending join requests, and kick history
   useEffect(() => {
     if (!account) return;
     void fetch(`/groups/member/${account.address}`)
       .then(r => r.json())
       .then((gs: GroupData[]) => setMyGroupIds(new Set(gs.map(g => g.groupId))))
+      .catch(() => {});
+    void fetchMyJoinRequests(account.address)
+      .then(reqs => setPendingGroupIds(new Set(reqs.map(r => r.groupId))))
+      .catch(() => {});
+    void fetchMemberKicks(account.address, undefined, 100)
+      .then(kicks => {
+        const map = new Map<number, GroupKick>();
+        for (const k of kicks) {
+          if (!map.has(k.groupId)) map.set(k.groupId, k);
+        }
+        setViewerKickMap(map);
+      })
       .catch(() => {});
   }, [account]);
 
@@ -212,8 +240,12 @@ export function BrowsePage() {
     setVisibility('ALL');
   }
 
-  function handleJoined(groupId: number) {
-    setMyGroupIds(prev => new Set([...prev, groupId]));
+  function handleJoined(groupId: number, isOpen: boolean) {
+    if (isOpen) {
+      setMyGroupIds(prev => new Set([...prev, groupId]));
+    } else {
+      setPendingGroupIds(prev => new Set([...prev, groupId]));
+    }
   }
 
   const displayed = sortGroups(groups, sort);
@@ -280,7 +312,7 @@ export function BrowsePage() {
       ) : (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
           {displayed.map(g => (
-            <GroupCard key={g.groupId} group={g} isMember={myGroupIds.has(g.groupId)} onJoined={handleJoined} />
+            <GroupCard key={g.groupId} group={g} isMember={myGroupIds.has(g.groupId)} isPending={pendingGroupIds.has(g.groupId)} viewerKick={viewerKickMap.get(g.groupId)} onJoined={handleJoined} />
           ))}
         </Box>
       )}
