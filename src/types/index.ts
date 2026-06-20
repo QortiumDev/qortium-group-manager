@@ -83,3 +83,14 @@ export interface GroupKick {
   timestamp: number;
   groupName?: string;
 }
+
+export interface PendingProposal {
+  type: string;
+  signature: string;
+  timestamp?: number;
+  creatorAddress?: string;
+  member?: string;
+  invitee?: string;
+  offender?: string;
+  targetName?: string;
+}

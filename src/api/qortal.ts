@@ -73,8 +73,34 @@ export async function banFromGroup(groupId: number, offender: string, reason?: s
   await qdnRequest({ action: 'GROUP_BAN', groupId, offender, ...(reason ? { reason } : {}), ...(timeToLive !== undefined ? { timeToLive } : {}) });
 }
 
+export async function groupApproval(pendingSignature: string, approval: boolean, groupId?: number): Promise<void> {
+  await qdnRequest({ action: 'GROUP_APPROVAL', pendingSignature, approval, ...(groupId !== undefined ? { groupId } : {}) });
+}
+
+export async function cancelGroupInvite(groupId: number, invitee: string): Promise<void> {
+  await qdnRequest({ action: 'CANCEL_GROUP_INVITE', groupId, invitee });
+}
+
+export async function approveGroupJoinRequest(groupId: number, joiner: string): Promise<void> {
+  await qdnRequest({ action: 'APPROVE_GROUP_JOIN_REQUEST', groupId, joiner });
+}
+
 export async function cancelGroupBan(groupId: number, member: string): Promise<void> {
   await qdnRequest({ action: 'CANCEL_GROUP_BAN', groupId, member });
+}
+
+export async function fetchGroupKicks(groupId: number, limit = 50, offset = 0): Promise<import('../types').GroupKick[]> {
+  try {
+    const result = await qdnRequest({ action: 'GET_GROUP_KICKS', groupId, limit, offset, reverse: true });
+    return Array.isArray(result) ? result as import('../types').GroupKick[] : [];
+  } catch { return []; }
+}
+
+export async function fetchMemberBans(address: string, limit = 50): Promise<import('../types').GroupBan[]> {
+  try {
+    const result = await qdnRequest({ action: 'GET_MEMBER_BANS', address, limit, reverse: true });
+    return Array.isArray(result) ? result as import('../types').GroupBan[] : [];
+  } catch { return []; }
 }
 
 export async function getMintingStatus(address: string): Promise<import('../types').MintingStatus> {

@@ -1,4 +1,4 @@
-import type { GroupData, GroupMember, GroupMembers, GroupInvite, GroupWithJoinRequests, GroupJoinRequest, GroupBan, GroupKick } from '../types';
+import type { GroupData, GroupMember, GroupMembers, GroupInvite, GroupWithJoinRequests, GroupJoinRequest, GroupBan, GroupKick, PendingProposal } from '../types';
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path);
@@ -82,6 +82,13 @@ export async function searchGroups(query: string, visibility: 'ALL' | 'OPEN' | '
   }
 }
 
+export async function resolveAddress(nameOrAddress: string): Promise<string> {
+  const trimmed = nameOrAddress.trim();
+  if (trimmed.length >= 30) return trimmed;
+  const info = await get<{ owner: string }>(`/names/${encodeURIComponent(trimmed)}`);
+  return info.owner;
+}
+
 export async function fetchMyGroups(address: string): Promise<GroupData[]> {
   try {
     return await get<GroupData[]>(`/groups/member/${address}`);
@@ -121,6 +128,12 @@ export async function fetchMyInvites(address: string): Promise<GroupInvite[]> {
   } catch { return []; }
 }
 
+export async function fetchGroupInvitesSent(groupId: number): Promise<GroupInvite[]> {
+  try {
+    return await get<GroupInvite[]>(`/groups/invites/group/${groupId}`);
+  } catch { return []; }
+}
+
 export async function fetchAdminRequests(address: string): Promise<GroupWithJoinRequests[]> {
   try {
     return await get<GroupWithJoinRequests[]>(`/groups/joinrequests/admin/${address}`);
@@ -136,6 +149,23 @@ export async function fetchMyJoinRequests(address: string): Promise<GroupJoinReq
 export async function fetchGroupBans(groupId: number): Promise<GroupBan[]> {
   try {
     return await get<GroupBan[]>(`/groups/bans/${groupId}`);
+  } catch { return []; }
+}
+
+export async function fetchPendingGroupApprovals(groupId: number): Promise<PendingProposal[]> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const txs = await get<any[]>(`/transactions/search?txGroupId=${groupId}&confirmationStatus=UNCONFIRMED&limit=50`);
+    if (!Array.isArray(txs)) return [];
+    return txs.map(tx => ({
+      type: tx.type ?? 'UNKNOWN',
+      signature: tx.signature ?? '',
+      timestamp: tx.timestamp,
+      creatorAddress: tx.creatorAddress,
+      member: tx.member,
+      invitee: tx.invitee,
+      offender: tx.offender,
+    })).filter(p => p.signature);
   } catch { return []; }
 }
 

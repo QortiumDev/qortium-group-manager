@@ -6,10 +6,12 @@ import LockOpenIcon from '@mui/icons-material/LockOpen';
 import LockIcon from '@mui/icons-material/Lock';
 import PeopleIcon from '@mui/icons-material/People';
 import GavelIcon from '@mui/icons-material/Gavel';
+import BlockIcon from '@mui/icons-material/Block';
 import { useColors } from '../theme/ColorTokensContext';
 import { tokens } from '../theme/tokens';
 import { fetchGroupsByMember, fetchPrimaryNames, fetchMemberKicks } from '../api/rest';
-import type { GroupData, GroupKick } from '../types';
+import { fetchMemberBans } from '../api/qortal';
+import type { GroupData, GroupKick, GroupBan } from '../types';
 
 export function AddressGroupsPage() {
   const { address } = useParams<{ address: string }>();
@@ -18,6 +20,7 @@ export function AddressGroupsPage() {
 
   const [groups, setGroups]           = useState<GroupData[]>([]);
   const [kicks, setKicks]             = useState<GroupKick[]>([]);
+  const [bans, setBans]               = useState<GroupBan[]>([]);
   const [primaryName, setPrimaryName] = useState<string | null>(null);
   const [loading, setLoading]         = useState(true);
 
@@ -28,12 +31,14 @@ export function AddressGroupsPage() {
       fetchGroupsByMember(address),
       fetchPrimaryNames([address]),
       fetchMemberKicks(address, undefined, 50),
-    ]).then(([gs, names, ks]) => {
-      setGroups(Array.isArray(gs) ? gs : []);
+      fetchMemberBans(address),
+    ]).then(([gs, names, ks, bs]) => {
+      const groupList = Array.isArray(gs) ? gs : [];
+      setGroups(groupList);
       setPrimaryName(names.get(address) ?? null);
-      // Annotate kicks with group names from membership list where available
-      const groupNameMap = new Map((Array.isArray(gs) ? gs : []).map((g: GroupData) => [g.groupId, g.groupName]));
+      const groupNameMap = new Map(groupList.map((g: GroupData) => [g.groupId, g.groupName]));
       setKicks(ks.map(k => ({ ...k, groupName: groupNameMap.get(k.groupId) })));
+      setBans((Array.isArray(bs) ? bs : []).map(b => ({ ...b })));
     }).finally(() => setLoading(false));
   }, [address]);
 
@@ -119,7 +124,7 @@ export function AddressGroupsPage() {
                   Kick History ({kicks.length})
                 </Typography>
               </Box>
-              <Box sx={{ border: `${tokens.shape.borderWidth} solid ${c.borderLight}`, borderRadius: `${tokens.shape.radius}px`, bgcolor: c.surface, overflow: 'hidden' }}>
+              <Box sx={{ border: `${tokens.shape.borderWidth} solid ${c.borderLight}`, borderRadius: `${tokens.shape.radius}px`, bgcolor: c.surface, overflow: 'hidden', mb: 3 }}>
                 {kicks.map((k, i) => (
                   <Box key={i} onClick={() => navigate(`/group/${k.groupId}`)} sx={{
                     display: 'flex', alignItems: 'flex-start', gap: 1.5,
@@ -134,6 +139,40 @@ export function AddressGroupsPage() {
                       <Typography sx={{ fontSize: '0.68rem', color: c.textSecondary }}>
                         {new Date(k.timestamp).toLocaleDateString()}
                         {k.reason && <> · <Box component="span" sx={{ fontStyle: 'italic' }}>"{k.reason}"</Box></>}
+                      </Typography>
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
+            </>
+          )}
+
+          {/* Ban history */}
+          {bans.length > 0 && (
+            <>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                <BlockIcon sx={{ fontSize: '0.85rem', color: c.error }} />
+                <Typography sx={{ fontSize: '0.65rem', fontWeight: tokens.typography.weightBold, letterSpacing: '0.14em', textTransform: 'uppercase', color: c.error }}>
+                  Ban History ({bans.length})
+                </Typography>
+              </Box>
+              <Box sx={{ border: `${tokens.shape.borderWidth} solid ${c.error}33`, borderRadius: `${tokens.shape.radius}px`, bgcolor: c.surface, overflow: 'hidden' }}>
+                {bans.map((b, i) => (
+                  <Box key={i} onClick={() => navigate(`/group/${b.groupId}`)} sx={{
+                    display: 'flex', alignItems: 'flex-start', gap: 1.5,
+                    px: 2.5, py: 1.25,
+                    borderBottom: i < bans.length - 1 ? `1px solid ${c.borderLight}` : 'none',
+                    cursor: 'pointer', '&:hover': { bgcolor: c.borderLight }, transition: '0.12s ease',
+                  }}>
+                    <BlockIcon sx={{ fontSize: '0.85rem', color: c.error, mt: '2px', flexShrink: 0 }} />
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography sx={{ fontSize: '0.85rem', fontWeight: tokens.typography.weightBold, color: c.textPrimary }}>
+                        Group #{b.groupId}
+                      </Typography>
+                      <Typography sx={{ fontSize: '0.68rem', color: c.textSecondary, lineHeight: 1.5 }}>
+                        Banned {new Date(b.banned).toLocaleDateString()}
+                        {' · '}{b.expiry ? `Expires ${new Date(b.expiry).toLocaleDateString()}` : 'Permanent'}
+                        {b.reason && <> · <Box component="span" sx={{ fontStyle: 'italic' }}>"{b.reason}"</Box></>}
                       </Typography>
                     </Box>
                   </Box>

@@ -12,20 +12,23 @@ import LockOpenIcon from '@mui/icons-material/LockOpen';
 import LockIcon from '@mui/icons-material/Lock';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import EditIcon from '@mui/icons-material/Edit';
+import MailOutlineIcon from '@mui/icons-material/MailOutline';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import BlockIcon from '@mui/icons-material/Block';
+import GavelIcon from '@mui/icons-material/Gavel';
 import { useAtomValue } from 'jotai';
 import { useColors } from '../theme/ColorTokensContext';
 import { tokens } from '../theme/tokens';
 import { accountAtom } from '../state/atoms';
-import { fetchGroup, fetchGroupMembers, fetchAdminRequests, fetchPrimaryNames, fetchMyJoinRequests, fetchGroupBans, fetchMemberKicks } from '../api/rest';
+import { fetchGroup, fetchGroupMembers, fetchAdminRequests, fetchPrimaryNames, fetchMyJoinRequests, fetchGroupBans, fetchMemberKicks, fetchGroupInvitesSent, fetchPendingGroupApprovals, resolveAddress } from '../api/rest';
 import {
   joinGroup, leaveGroup, inviteToGroup, updateGroup,
   getMintingStatus, startMinting,
   addGroupAdmin, removeGroupAdmin, kickFromGroup, banFromGroup, cancelGroupBan,
+  approveGroupJoinRequest, cancelGroupInvite, fetchGroupKicks, groupApproval,
 } from '../api/qortal';
 import { AddressLink } from '../components/common/AddressLink';
-import type { GroupData, GroupMember, GroupJoinRequest, MintingStatus, GroupBan, GroupKick } from '../types';
+import type { GroupData, GroupMember, GroupJoinRequest, MintingStatus, GroupBan, GroupKick, PendingProposal } from '../types';
 
 const MEMBER_LIMIT = 20;
 const APPROVAL_THRESHOLDS = ['NONE', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX'];
@@ -276,7 +279,7 @@ function JoinRequestRow({ req, primaryName, onApproved }: JoinRequestRowProps) {
   async function handleApprove() {
     setBusy(true); setErr(null);
     try {
-      await inviteToGroup(req.groupId, req.joiner);
+      await approveGroupJoinRequest(req.groupId, req.joiner);
       onApproved(req.joiner);
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : String(ex));
@@ -295,6 +298,128 @@ function JoinRequestRow({ req, primaryName, onApproved }: JoinRequestRowProps) {
       <Button variant="contained" disableElevation size="small" disabled={busy} onClick={() => void handleApprove()}
         sx={{ bgcolor: c.accent, color: c.accentText, borderRadius: '50px', fontSize: '0.68rem', px: 1.5, flexShrink: 0, '&:hover': { bgcolor: c.accentHover }, '&.Mui-disabled': { opacity: 0.35, bgcolor: c.accent, color: c.accentText } }}>
         {busy ? <CircularProgress size={10} sx={{ color: c.accentText }} /> : 'Approve'}
+      </Button>
+    </Box>
+  );
+}
+
+// ─── ProposalRow ─────────────────────────────────────────────────────────────
+
+const PROPOSAL_LABELS: Record<string, string> = {
+  GROUP_INVITE: 'Invite / Approve join',
+  ADD_GROUP_ADMIN: 'Add admin',
+  REMOVE_GROUP_ADMIN: 'Remove admin',
+  GROUP_KICK: 'Kick member',
+  GROUP_BAN: 'Ban member',
+  CANCEL_GROUP_BAN: 'Cancel ban',
+  LEAVE_GROUP: 'Leave group',
+};
+
+interface ProposalRowProps {
+  proposal: import('../types').PendingProposal;
+  groupId: number;
+  targetName: string | null | undefined;
+  onVoted: (signature: string) => void;
+}
+
+function ProposalRow({ proposal, groupId, targetName, onVoted }: ProposalRowProps) {
+  const c = useColors();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr]   = useState<string | null>(null);
+
+  const targetAddress = proposal.member || proposal.invitee || proposal.offender;
+  const targetDisplay = targetName || (targetAddress ? targetAddress.slice(0, 12) + '…' : null);
+  const label = PROPOSAL_LABELS[proposal.type] ?? proposal.type.replace(/_/g, ' ');
+
+  async function handleVote(approve: boolean) {
+    setBusy(true); setErr(null);
+    try {
+      await groupApproval(proposal.signature, approve, groupId);
+      onVoted(proposal.signature);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <Box sx={{
+      display: 'flex', alignItems: 'flex-start', gap: 1.5,
+      py: 1.25, px: 1.5,
+      borderRadius: `${tokens.shape.radius - 2}px`,
+    }}>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography sx={{ fontSize: '0.82rem', fontWeight: tokens.typography.weightBold, color: c.textPrimary, lineHeight: 1.3 }}>
+          {label}
+        </Typography>
+        {targetDisplay && (
+          <Typography sx={{ fontSize: '0.68rem', color: c.textSecondary, fontFamily: targetName ? 'inherit' : 'monospace' }}>
+            {targetDisplay}
+          </Typography>
+        )}
+        {proposal.timestamp && (
+          <Typography sx={{ fontSize: '0.65rem', color: c.textSecondary }}>
+            {new Date(proposal.timestamp).toLocaleDateString()}
+          </Typography>
+        )}
+        {err && <Typography sx={{ fontSize: '0.68rem', color: c.error, mt: 0.25 }}>{err}</Typography>}
+      </Box>
+      <Box sx={{ display: 'flex', gap: 0.75, flexShrink: 0 }}>
+        <Button variant="contained" disableElevation size="small" disabled={busy} onClick={() => void handleVote(true)}
+          sx={{ bgcolor: c.accent, color: c.accentText, borderRadius: '50px', fontSize: '0.65rem', px: 1.5, '&:hover': { bgcolor: c.accentHover }, '&.Mui-disabled': { opacity: 0.35, bgcolor: c.accent, color: c.accentText } }}>
+          {busy ? <CircularProgress size={10} sx={{ color: c.accentText }} /> : 'Approve'}
+        </Button>
+        <Button variant="outlined" size="small" disabled={busy} onClick={() => void handleVote(false)}
+          sx={{ borderColor: c.error, color: c.error, borderRadius: '50px', fontSize: '0.65rem', px: 1.5, '&:hover': { bgcolor: `${c.error}10` }, '&.Mui-disabled': { opacity: 0.35 } }}>
+          Oppose
+        </Button>
+      </Box>
+    </Box>
+  );
+}
+
+// ─── PendingInviteRow ────────────────────────────────────────────────────────
+
+interface PendingInviteRowProps {
+  inv: import('../types').GroupInvite;
+  displayName: string;
+  onCanceled: (invitee: string) => void;
+}
+
+function PendingInviteRow({ inv, displayName, onCanceled }: PendingInviteRowProps) {
+  const c = useColors();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr]   = useState<string | null>(null);
+
+  async function handleCancel() {
+    setBusy(true); setErr(null);
+    try {
+      await cancelGroupInvite(inv.groupId, inv.invitee);
+      onCanceled(inv.invitee);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <Box sx={{
+      display: 'flex', alignItems: 'center', gap: 1.5,
+      py: 1, px: 1.5,
+      borderRadius: `${tokens.shape.radius - 2}px`,
+    }}>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography sx={{ fontSize: '0.82rem', fontWeight: tokens.typography.weightBold, color: c.textPrimary, lineHeight: 1.3 }}>
+          {displayName.length > 20 ? displayName.slice(0, 16) + '…' : displayName}
+        </Typography>
+        {inv.expiry && (
+          <Typography sx={{ fontSize: '0.65rem', color: c.textSecondary }}>
+            Expires {new Date(inv.expiry).toLocaleDateString()}
+          </Typography>
+        )}
+        {err && <Typography sx={{ fontSize: '0.68rem', color: c.error, mt: 0.25 }}>{err}</Typography>}
+      </Box>
+      <Button variant="outlined" size="small" disabled={busy} onClick={() => void handleCancel()}
+        sx={{ borderColor: c.error, color: c.error, borderRadius: '50px', fontSize: '0.65rem', px: 1.5, flexShrink: 0, '&:hover': { bgcolor: `${c.error}10` }, '&.Mui-disabled': { opacity: 0.35 } }}>
+        {busy ? <CircularProgress size={10} sx={{ color: c.error }} /> : 'Cancel'}
       </Button>
     </Box>
   );
@@ -347,6 +472,20 @@ export function GroupPage() {
   const [bans, setBans]         = useState<GroupBan[]>([]);
   const [bansLoaded, setBansLoaded] = useState(false);
   const [viewerKick, setViewerKick] = useState<GroupKick | null>(null);
+  const [groupKicks, setGroupKicks] = useState<GroupKick[]>([]);
+  const [groupKicksLoaded, setGroupKicksLoaded] = useState(false);
+  const [kickNameMap, setKickNameMap] = useState<Map<string, string | null>>(new Map());
+
+  const [inviteOpen, setInviteOpen]     = useState(false);
+  const [inviteTarget, setInviteTarget] = useState('');
+  const [inviteBusy, setInviteBusy]     = useState(false);
+  const [inviteStatus, setInviteStatus] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+
+  const [sentInvites, setSentInvites]         = useState<import('../types').GroupInvite[]>([]);
+  const [sentInviteNames, setSentInviteNames] = useState<Map<string, string | null>>(new Map());
+
+  const [proposals, setProposals]       = useState<PendingProposal[]>([]);
+  const [proposalNames, setProposalNames] = useState<Map<string, string | null>>(new Map());
 
   // Main data load
   useEffect(() => {
@@ -434,6 +573,50 @@ export function GroupPage() {
       setViewerKick(kicks[0] ?? null);
     }).catch(() => {});
   }, [id, account?.address]);
+
+  // Load pending outgoing invites (admin/owner only — loaded after isOwner/isAdmin is known)
+  useEffect(() => {
+    if (!id || (!isOwner && !isAdmin)) return;
+    const groupId = parseInt(id);
+    void fetchGroupInvitesSent(groupId).then(async invs => {
+      setSentInvites(invs);
+      if (invs.length > 0) {
+        const nameMap = await fetchPrimaryNames(invs.map(i => i.invitee));
+        setSentInviteNames(nameMap);
+      }
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, isOwner, isAdmin]);
+
+  // Load pending proposals (only for groups with approval threshold)
+  useEffect(() => {
+    if (!id || !group || group.approvalThreshold === 'NONE' || !group.approvalThreshold) return;
+    const groupId = parseInt(id);
+    void fetchPendingGroupApprovals(groupId).then(async props => {
+      setProposals(props);
+      const targets = props.map(p => p.member || p.invitee || p.offender || p.creatorAddress).filter(Boolean) as string[];
+      if (targets.length > 0) {
+        const nameMap = await fetchPrimaryNames([...new Set(targets)]);
+        setProposalNames(nameMap);
+      }
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, group?.approvalThreshold]);
+
+  // Load group kick log
+  useEffect(() => {
+    if (!id) return;
+    const groupId = parseInt(id);
+    setGroupKicksLoaded(false);
+    void fetchGroupKicks(groupId).then(async kicks => {
+      setGroupKicks(kicks);
+      if (kicks.length > 0) {
+        const nameMap = await fetchPrimaryNames(kicks.map(k => k.member));
+        setKickNameMap(nameMap);
+      }
+      setGroupKicksLoaded(true);
+    }).catch(() => setGroupKicksLoaded(true));
+  }, [id]);
 
   const viewerBan = useMemo(
     () => (account && bansLoaded) ? (bans.find(b => b.offender === account.address) ?? null) : null,
@@ -524,6 +707,27 @@ export function GroupPage() {
   function handleMemberRemoved(address: string) {
     setMembers(prev => prev.filter(m => m.member !== address));
     setMemberCount(prev => Math.max(0, prev - 1));
+  }
+
+  async function handleInviteSubmit() {
+    if (!group || !inviteTarget.trim()) return;
+    setInviteBusy(true); setInviteStatus(null);
+    try {
+      const address = await resolveAddress(inviteTarget);
+      await inviteToGroup(group.groupId, address);
+      setInviteStatus({ type: 'success', msg: 'Invite sent!' });
+      setTimeout(async () => {
+        setInviteOpen(false); setInviteTarget(''); setInviteStatus(null);
+        const invs = await fetchGroupInvitesSent(group.groupId);
+        setSentInvites(invs);
+        if (invs.length > 0) {
+          const nameMap = await fetchPrimaryNames(invs.map(i => i.invitee));
+          setSentInviteNames(nameMap);
+        }
+      }, 1200);
+    } catch (e) {
+      setInviteStatus({ type: 'error', msg: e instanceof Error ? e.message : String(e) });
+    } finally { setInviteBusy(false); }
   }
 
   if (loading) {
@@ -727,10 +931,71 @@ export function GroupPage() {
         </Box>
       )}
 
+      {/* Pending proposals (approval threshold groups) */}
+      {proposals.length > 0 && (
+        <Box sx={{ border: `${tokens.shape.borderWidth} solid ${c.accent}55`, borderRadius: `${tokens.shape.radius}px`, bgcolor: `${c.accent}08`, overflow: 'hidden', mb: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 1.25, borderBottom: `1px solid ${c.borderLight}`, bgcolor: `${c.accent}0a` }}>
+            <AdminPanelSettingsIcon sx={{ fontSize: '0.9rem', color: c.accent, flexShrink: 0 }} />
+            <Typography sx={{ fontSize: '0.72rem', fontWeight: tokens.typography.weightBold, letterSpacing: '0.08em', textTransform: 'uppercase', color: c.accent, flex: 1 }}>
+              Pending Proposals
+            </Typography>
+            <Chip label={proposals.length} size="small" sx={{ fontSize: '0.6rem', height: 18, bgcolor: `${c.accent}22`, color: c.accent, border: `1px solid ${c.accent}44` }} />
+          </Box>
+          <Box sx={{ px: 0.5, py: 0.5 }}>
+            {proposals.map(p => {
+              const targetAddress = p.member || p.invitee || p.offender;
+              return (
+                <ProposalRow
+                  key={p.signature}
+                  proposal={p}
+                  groupId={group.groupId}
+                  targetName={targetAddress ? proposalNames.get(targetAddress) : null}
+                  onVoted={sig => setProposals(prev => prev.filter(x => x.signature !== sig))}
+                />
+              );
+            })}
+          </Box>
+        </Box>
+      )}
+
+      {/* Pending outgoing invites (admin/owner) */}
+      {(isOwner || isAdmin) && sentInvites.length > 0 && (
+        <Box sx={{ border: `${tokens.shape.borderWidth} solid ${c.accent}44`, borderRadius: `${tokens.shape.radius}px`, bgcolor: `${c.accent}08`, overflow: 'hidden', mb: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 1.25, borderBottom: `1px solid ${c.borderLight}`, bgcolor: `${c.accent}0a` }}>
+            <MailOutlineIcon sx={{ fontSize: '0.9rem', color: c.accent, flexShrink: 0 }} />
+            <Typography sx={{ fontSize: '0.72rem', fontWeight: tokens.typography.weightBold, letterSpacing: '0.08em', textTransform: 'uppercase', color: c.accent, flex: 1 }}>
+              Pending Invites
+            </Typography>
+            <Chip label={sentInvites.length} size="small" sx={{ fontSize: '0.6rem', height: 18, bgcolor: `${c.accent}22`, color: c.accent, border: `1px solid ${c.accent}44` }} />
+          </Box>
+          <Box sx={{ px: 0.5, py: 0.5 }}>
+            {sentInvites.map(inv => {
+              const inviteeName = sentInviteNames.get(inv.invitee);
+              return (
+                <PendingInviteRow
+                  key={inv.invitee}
+                  inv={inv}
+                  displayName={inviteeName || inv.invitee}
+                  onCanceled={invitee => setSentInvites(prev => prev.filter(i => i.invitee !== invitee))}
+                />
+              );
+            })}
+          </Box>
+        </Box>
+      )}
+
       {/* Members list */}
-      <Typography sx={{ fontSize: '0.65rem', fontWeight: tokens.typography.weightBold, letterSpacing: '0.14em', textTransform: 'uppercase', color: c.textSecondary, mb: 1.5 }}>
-        Members
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
+        <Typography sx={{ fontSize: '0.65rem', fontWeight: tokens.typography.weightBold, letterSpacing: '0.14em', textTransform: 'uppercase', color: c.textSecondary, flex: 1 }}>
+          Members
+        </Typography>
+        {(isOwner || isAdmin) && (
+          <Button size="small" variant="outlined" onClick={() => { setInviteTarget(''); setInviteStatus(null); setInviteOpen(true); }}
+            sx={{ borderColor: c.accent, color: c.accent, borderRadius: '50px', fontSize: '0.65rem', px: 1.5, py: 0.25, '&:hover': { bgcolor: `${c.accent}12`, borderColor: c.accent } }}>
+            Invite
+          </Button>
+        )}
+      </Box>
 
       <Box sx={{ border: `${tokens.shape.borderWidth} solid ${c.borderLight}`, borderRadius: `${tokens.shape.radius}px`, bgcolor: c.surface, overflow: 'hidden', mb: 2 }}>
         {members.length === 0 ? (
@@ -774,6 +1039,72 @@ export function GroupPage() {
           </Box>
         </>
       )}
+
+      {/* Kick log */}
+      {groupKicksLoaded && groupKicks.length > 0 && (
+        <>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+            <GavelIcon sx={{ fontSize: '0.85rem', color: c.textSecondary }} />
+            <Typography sx={{ fontSize: '0.65rem', fontWeight: tokens.typography.weightBold, letterSpacing: '0.14em', textTransform: 'uppercase', color: c.textSecondary }}>
+              Kick Log
+            </Typography>
+            <Chip label={groupKicks.length} size="small" sx={{ fontSize: '0.58rem', height: 16, bgcolor: `${c.textSecondary}18`, color: c.textSecondary, border: `1px solid ${c.textSecondary}33` }} />
+          </Box>
+          <Box sx={{ border: `${tokens.shape.borderWidth} solid ${c.borderLight}`, borderRadius: `${tokens.shape.radius}px`, bgcolor: c.surface, overflow: 'hidden', mb: 2 }}>
+            {groupKicks.map((k, i) => {
+              const memberName = kickNameMap.get(k.member);
+              return (
+                <Box key={i} sx={{
+                  display: 'flex', alignItems: 'flex-start', gap: 1.5,
+                  px: 2, py: 1.25,
+                  borderBottom: i < groupKicks.length - 1 ? `1px solid ${c.borderLight}` : 'none',
+                }}>
+                  <GavelIcon sx={{ fontSize: '0.85rem', color: c.textSecondary, mt: '2px', flexShrink: 0 }} />
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    {memberName && (
+                      <Typography sx={{ fontSize: '0.85rem', fontWeight: tokens.typography.weightBold, color: c.textPrimary }}>
+                        {memberName}
+                      </Typography>
+                    )}
+                    <AddressLink address={k.member} monoColor={memberName ? c.textSecondary : c.textPrimary} />
+                    <Typography sx={{ fontSize: '0.68rem', color: c.textSecondary, lineHeight: 1.5, mt: 0.25 }}>
+                      Kicked {new Date(k.timestamp).toLocaleDateString()}
+                      {k.reason && <> · <Box component="span" sx={{ fontStyle: 'italic' }}>"{k.reason}"</Box></>}
+                    </Typography>
+                  </Box>
+                </Box>
+              );
+            })}
+          </Box>
+        </>
+      )}
+
+      {/* Invite dialog */}
+      <Dialog open={inviteOpen} onClose={() => !inviteBusy && setInviteOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontSize: '0.95rem', fontWeight: tokens.typography.weightBold, pb: 1 }}>
+          Invite to {group?.groupName}
+        </DialogTitle>
+        <DialogContent sx={{ pt: '8px !important', display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+          <Typography sx={{ fontSize: '0.82rem', color: c.textSecondary }}>
+            Enter a name or address to invite.
+          </Typography>
+          <TextField
+            label="Name or address" size="small" fullWidth autoFocus
+            value={inviteTarget} onChange={e => setInviteTarget(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') void handleInviteSubmit(); }}
+            disabled={inviteBusy}
+            sx={{ '& .MuiOutlinedInput-root': { fontSize: '0.85rem', '& fieldset': { borderColor: c.borderLight }, '&:hover fieldset': { borderColor: c.accent }, '&.Mui-focused fieldset': { borderColor: c.accent } }, '& label': { fontSize: '0.82rem' } }}
+          />
+          {inviteStatus && <Alert severity={inviteStatus.type} sx={{ fontSize: '0.78rem', py: 0 }}>{inviteStatus.msg}</Alert>}
+        </DialogContent>
+        <DialogActions sx={{ px: 2.5, pb: 2 }}>
+          <Button onClick={() => setInviteOpen(false)} disabled={inviteBusy} sx={{ fontSize: '0.78rem', color: c.textSecondary }}>Cancel</Button>
+          <Button variant="contained" disableElevation disabled={inviteBusy || !inviteTarget.trim()} onClick={() => void handleInviteSubmit()}
+            sx={{ bgcolor: c.accent, color: c.accentText, borderRadius: '50px', fontSize: '0.78rem', px: 2, '&:hover': { bgcolor: c.accentHover }, '&.Mui-disabled': { opacity: 0.35, bgcolor: c.accent, color: c.accentText } }}>
+            {inviteBusy ? <CircularProgress size={13} sx={{ color: c.accentText }} /> : 'Send Invite'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

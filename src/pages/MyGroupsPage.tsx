@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box, Button, CircularProgress, Typography, Alert, Chip,
+  Dialog, DialogTitle, DialogContent, DialogActions, TextField,
 } from '@mui/material';
 import GroupsIcon from '@mui/icons-material/Groups';
 import MailOutlineIcon from '@mui/icons-material/MailOutline';
@@ -14,8 +15,8 @@ import { useAtomValue } from 'jotai';
 import { useColors } from '../theme/ColorTokensContext';
 import { tokens } from '../theme/tokens';
 import { accountAtom } from '../state/atoms';
-import { fetchMyGroups, fetchMyInvites, fetchAdminRequests, fetchGroup, fetchPrimaryNames } from '../api/rest';
-import { joinGroup, leaveGroup, inviteToGroup } from '../api/qortal';
+import { fetchMyGroups, fetchMyInvites, fetchAdminRequests, fetchGroup, fetchPrimaryNames, resolveAddress } from '../api/rest';
+import { joinGroup, leaveGroup, inviteToGroup, approveGroupJoinRequest } from '../api/qortal';
 import type { GroupData, GroupInvite, GroupJoinRequest, GroupWithJoinRequests } from '../types';
 
 type Status = { type: 'success' | 'error'; msg: string } | null;
@@ -25,6 +26,10 @@ function MyGroupRow({ group, isOwner, isAdmin, onLeft }: { group: GroupData; isO
   const navigate = useNavigate();
   const [busy, setBusy]     = useState(false);
   const [status, setStatus] = useState<Status>(null);
+  const [inviteOpen, setInviteOpen]     = useState(false);
+  const [inviteTarget, setInviteTarget] = useState('');
+  const [inviteBusy, setInviteBusy]     = useState(false);
+  const [inviteStatus, setInviteStatus] = useState<Status>(null);
 
   async function handleLeave(e: React.MouseEvent) {
     e.stopPropagation(); e.preventDefault();
@@ -38,53 +43,105 @@ function MyGroupRow({ group, isOwner, isAdmin, onLeft }: { group: GroupData; isO
     } finally { setBusy(false); }
   }
 
+  function openInvite(e: React.MouseEvent) {
+    e.stopPropagation(); e.preventDefault();
+    setInviteTarget(''); setInviteStatus(null); setInviteOpen(true);
+  }
+
+  async function handleInvite() {
+    if (!inviteTarget.trim()) return;
+    setInviteBusy(true); setInviteStatus(null);
+    try {
+      const address = await resolveAddress(inviteTarget);
+      await inviteToGroup(group.groupId, address);
+      setInviteStatus({ type: 'success', msg: 'Invite sent!' });
+      setTimeout(() => { setInviteOpen(false); setInviteTarget(''); setInviteStatus(null); }, 1200);
+    } catch (ex) {
+      setInviteStatus({ type: 'error', msg: ex instanceof Error ? ex.message : String(ex) });
+    } finally { setInviteBusy(false); }
+  }
+
   return (
-    <Box
-      onClick={() => navigate(`/group/${group.groupId}`)}
-      sx={{
-        border: `${tokens.shape.borderWidth} solid ${c.borderLight}`,
-        borderRadius: `${tokens.shape.radius}px`,
-        bgcolor: c.surface, p: 2.5,
-        cursor: 'pointer', transition: '0.15s ease',
-        '&:hover': { borderColor: c.accent },
-      }}
-    >
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 0.75 }}>
-        <Typography sx={{ fontSize: '0.95rem', fontWeight: tokens.typography.weightBold, color: c.textPrimary, flex: 1 }}>
-          {group.groupName}
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 0.5, flexShrink: 0 }}>
-          {isOwner && <Chip label="Owner" size="small" sx={{ fontSize: '0.58rem', height: 16, bgcolor: `${c.accent}22`, color: c.accent, border: `1px solid ${c.accent}44` }} />}
-          {!isOwner && isAdmin && <Chip label="Admin" size="small" sx={{ fontSize: '0.58rem', height: 16, bgcolor: `${c.success}22`, color: c.success, border: `1px solid ${c.success}44` }} />}
-        </Box>
-      </Box>
-
-      {group.description && (
-        <Typography sx={{ fontSize: '0.78rem', color: c.textSecondary, mb: 1.5, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-          {group.description}
-        </Typography>
-      )}
-
-      {status && <Alert severity={status.type} sx={{ mb: 1, fontSize: '0.72rem', py: 0 }} onClick={e => e.stopPropagation()}>{status.msg}</Alert>}
-
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          {group.isOpen ? <LockOpenIcon sx={{ fontSize: '0.75rem', color: c.success }} /> : <LockIcon sx={{ fontSize: '0.75rem', color: c.textSecondary }} />}
-          <Typography sx={{ fontSize: '0.65rem', color: group.isOpen ? c.success : c.textSecondary, fontWeight: tokens.typography.weightBold, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-            {group.isOpen ? 'Open' : 'Closed'}
+    <>
+      <Box
+        onClick={() => navigate(`/group/${group.groupId}`)}
+        sx={{
+          border: `${tokens.shape.borderWidth} solid ${c.borderLight}`,
+          borderRadius: `${tokens.shape.radius}px`,
+          bgcolor: c.surface, p: 2.5,
+          cursor: 'pointer', transition: '0.15s ease',
+          '&:hover': { borderColor: c.accent },
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 0.75 }}>
+          <Typography sx={{ fontSize: '0.95rem', fontWeight: tokens.typography.weightBold, color: c.textPrimary, flex: 1 }}>
+            {group.groupName}
           </Typography>
+          <Box sx={{ display: 'flex', gap: 0.5, flexShrink: 0 }}>
+            {isOwner && <Chip label="Owner" size="small" sx={{ fontSize: '0.58rem', height: 16, bgcolor: `${c.accent}22`, color: c.accent, border: `1px solid ${c.accent}44` }} />}
+            {!isOwner && isAdmin && <Chip label="Admin" size="small" sx={{ fontSize: '0.58rem', height: 16, bgcolor: `${c.success}22`, color: c.success, border: `1px solid ${c.success}44` }} />}
+          </Box>
         </Box>
-        <Typography sx={{ fontSize: '0.72rem', color: c.textSecondary, flex: 1 }}>
-          · {(group.memberCount ?? 0).toLocaleString()} members
-        </Typography>
-        {!isOwner && (
-          <Button variant="outlined" size="small" disabled={busy} onClick={handleLeave}
-            sx={{ borderColor: c.error, color: c.error, borderRadius: '50px', fontSize: '0.68rem', px: 1.5, '&:hover': { bgcolor: `${c.error}12`, borderColor: c.error }, '&.Mui-disabled': { opacity: 0.35 } }}>
-            {busy ? <CircularProgress size={10} sx={{ color: c.error }} /> : 'Leave'}
-          </Button>
+
+        {group.description && (
+          <Typography sx={{ fontSize: '0.78rem', color: c.textSecondary, mb: 1.5, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+            {group.description}
+          </Typography>
         )}
+
+        {status && <Alert severity={status.type} sx={{ mb: 1, fontSize: '0.72rem', py: 0 }} onClick={e => e.stopPropagation()}>{status.msg}</Alert>}
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            {group.isOpen ? <LockOpenIcon sx={{ fontSize: '0.75rem', color: c.success }} /> : <LockIcon sx={{ fontSize: '0.75rem', color: c.textSecondary }} />}
+            <Typography sx={{ fontSize: '0.65rem', color: group.isOpen ? c.success : c.textSecondary, fontWeight: tokens.typography.weightBold, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              {group.isOpen ? 'Open' : 'Closed'}
+            </Typography>
+          </Box>
+          <Typography sx={{ fontSize: '0.72rem', color: c.textSecondary, flex: 1 }}>
+            · {(group.memberCount ?? 0).toLocaleString()} members
+          </Typography>
+          {(isOwner || isAdmin) && (
+            <Button variant="outlined" size="small" onClick={openInvite}
+              sx={{ borderColor: c.accent, color: c.accent, borderRadius: '50px', fontSize: '0.68rem', px: 1.5, '&:hover': { bgcolor: `${c.accent}12`, borderColor: c.accent } }}>
+              Invite
+            </Button>
+          )}
+          {!isOwner && (
+            <Button variant="outlined" size="small" disabled={busy} onClick={handleLeave}
+              sx={{ borderColor: c.error, color: c.error, borderRadius: '50px', fontSize: '0.68rem', px: 1.5, '&:hover': { bgcolor: `${c.error}12`, borderColor: c.error }, '&.Mui-disabled': { opacity: 0.35 } }}>
+              {busy ? <CircularProgress size={10} sx={{ color: c.error }} /> : 'Leave'}
+            </Button>
+          )}
+        </Box>
       </Box>
-    </Box>
+
+      <Dialog open={inviteOpen} onClose={() => !inviteBusy && setInviteOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontSize: '0.95rem', fontWeight: tokens.typography.weightBold, pb: 1 }}>
+          Invite to {group.groupName}
+        </DialogTitle>
+        <DialogContent sx={{ pt: '8px !important', display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+          <Typography sx={{ fontSize: '0.82rem', color: c.textSecondary }}>
+            Enter a name or address to invite.
+          </Typography>
+          <TextField
+            label="Name or address" size="small" fullWidth autoFocus
+            value={inviteTarget} onChange={e => setInviteTarget(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') void handleInvite(); }}
+            disabled={inviteBusy}
+            sx={{ '& .MuiOutlinedInput-root': { fontSize: '0.85rem', '& fieldset': { borderColor: c.borderLight }, '&:hover fieldset': { borderColor: c.accent }, '&.Mui-focused fieldset': { borderColor: c.accent } }, '& label': { fontSize: '0.82rem' } }}
+          />
+          {inviteStatus && <Alert severity={inviteStatus.type} sx={{ fontSize: '0.78rem', py: 0 }}>{inviteStatus.msg}</Alert>}
+        </DialogContent>
+        <DialogActions sx={{ px: 2.5, pb: 2 }}>
+          <Button onClick={() => setInviteOpen(false)} disabled={inviteBusy} sx={{ fontSize: '0.78rem', color: c.textSecondary }}>Cancel</Button>
+          <Button variant="contained" disableElevation disabled={inviteBusy || !inviteTarget.trim()} onClick={() => void handleInvite()}
+            sx={{ bgcolor: c.accent, color: c.accentText, borderRadius: '50px', fontSize: '0.78rem', px: 2, '&:hover': { bgcolor: c.accentHover }, '&.Mui-disabled': { opacity: 0.35, bgcolor: c.accent, color: c.accentText } }}>
+            {inviteBusy ? <CircularProgress size={13} sx={{ color: c.accentText }} /> : 'Send Invite'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 }
 
@@ -148,7 +205,7 @@ function JoinRequestRow({ req, primaryName, onApproved }: JoinRequestRowProps) {
   async function handleApprove() {
     setBusy(true); setErr(null);
     try {
-      await inviteToGroup(req.groupId, req.joiner);
+      await approveGroupJoinRequest(req.groupId, req.joiner);
       setDone(true);
       setTimeout(() => onApproved(req.joiner), 800);
     } catch (ex) {
