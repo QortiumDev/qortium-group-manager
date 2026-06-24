@@ -9,7 +9,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import { useColors } from '../theme/ColorTokensContext';
 import { tokens } from '../theme/tokens';
-import { createGroup } from '../api/qortal';
+import { createGroup, ensureAccountUnlocked } from '../api/qortal';
 
 const APPROVAL_THRESHOLDS = ['NONE', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX'];
 
@@ -61,6 +61,7 @@ export function CreateGroupPage() {
     setBusy(true);
     setError(null);
     try {
+      if (!await ensureAccountUnlocked()) return;
       await createGroup({
         groupName: form.groupName.trim(),
         description: form.description.trim(),

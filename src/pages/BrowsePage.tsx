@@ -14,7 +14,7 @@ import { useColors } from '../theme/ColorTokensContext';
 import { tokens } from '../theme/tokens';
 import { accountAtom } from '../state/atoms';
 import { fetchGroups, searchGroups, fetchGroupsByMember, fetchMyJoinRequests, fetchMemberKicks } from '../api/rest';
-import { joinGroup } from '../api/qortal';
+import { joinGroup, ensureAccountUnlocked } from '../api/qortal';
 import type { GroupData, GroupKick } from '../types';
 
 const LIMIT = 20;
@@ -68,7 +68,10 @@ function GroupCard({ group, isMember, isPending, viewerKick, onJoined }: { group
   async function handleJoin(e: React.MouseEvent) {
     e.stopPropagation();
     setBusy(true); setErr(null);
-    try { await joinGroup(group.groupId); onJoined(group.groupId, group.isOpen); }
+    try {
+      if (!await ensureAccountUnlocked()) return;
+      await joinGroup(group.groupId); onJoined(group.groupId, group.isOpen);
+    }
     catch (ex) { setErr(ex instanceof Error ? ex.message : String(ex)); }
     finally { setBusy(false); }
   }

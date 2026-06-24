@@ -89,6 +89,11 @@ export async function cancelGroupBan(groupId: number, member: string): Promise<v
   await qdnRequest({ action: 'CANCEL_GROUP_BAN', groupId, member });
 }
 
+export async function ensureAccountUnlocked(): Promise<boolean> {
+  const result = await qdnRequest({ action: 'UNLOCK_SELECTED_ACCOUNT' }) as { isUnlocked?: boolean } | null;
+  return result?.isUnlocked === true;
+}
+
 export async function fetchGroupKicks(groupId: number, limit = 50, offset = 0): Promise<import('../types').GroupKick[]> {
   try {
     const result = await qdnRequest({ action: 'GET_GROUP_KICKS', groupId, limit, offset, reverse: true });

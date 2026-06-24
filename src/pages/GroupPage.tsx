@@ -26,6 +26,7 @@ import {
   getMintingStatus, startMinting,
   addGroupAdmin, removeGroupAdmin, kickFromGroup, banFromGroup, cancelGroupBan,
   approveGroupJoinRequest, cancelGroupInvite, fetchGroupKicks, groupApproval,
+  ensureAccountUnlocked,
 } from '../api/qortal';
 import { AddressLink } from '../components/common/AddressLink';
 import type { GroupData, GroupMember, GroupJoinRequest, MintingStatus, GroupBan, GroupKick, PendingProposal } from '../types';
@@ -129,6 +130,7 @@ function MemberRow({
   async function handleAddAdmin() {
     setBusy(true); setErr(null);
     try {
+      if (!await ensureAccountUnlocked()) return;
       await addGroupAdmin(groupId, member.member);
       onAdminToggled(member.member, true);
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
@@ -138,6 +140,7 @@ function MemberRow({
   async function handleRemoveAdmin() {
     setBusy(true); setErr(null);
     try {
+      if (!await ensureAccountUnlocked()) return;
       await removeGroupAdmin(groupId, member.member);
       onAdminToggled(member.member, false);
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
@@ -147,6 +150,7 @@ function MemberRow({
   async function handleKick() {
     setBusy(true); setErr(null);
     try {
+      if (!await ensureAccountUnlocked()) return;
       await kickFromGroup(groupId, member.member, reason.trim() || undefined);
       onMemberRemoved(member.member);
       closeDialog();
@@ -157,6 +161,7 @@ function MemberRow({
   async function handleBan() {
     setBusy(true); setErr(null);
     try {
+      if (!await ensureAccountUnlocked()) return;
       await banFromGroup(groupId, member.member, reason.trim() || undefined, parseInt(banDuration) || 0);
       onMemberRemoved(member.member);
       closeDialog();
@@ -640,6 +645,7 @@ export function GroupPage() {
     if (!group) return;
     setActionBusy(true); setActionStatus(null);
     try {
+      if (!await ensureAccountUnlocked()) return;
       await joinGroup(group.groupId);
       if (group.isOpen) {
         setIsMember(true);
@@ -657,6 +663,7 @@ export function GroupPage() {
     if (!group) return;
     setActionBusy(true); setActionStatus(null);
     try {
+      if (!await ensureAccountUnlocked()) return;
       await leaveGroup(group.groupId);
       setIsMember(false);
       setActionStatus({ type: 'success', msg: `Left "${group.groupName}".` });
@@ -682,6 +689,7 @@ export function GroupPage() {
     if (!group || !account) return;
     setEditBusy(true); setEditStatus(null);
     try {
+      if (!await ensureAccountUnlocked()) return;
       await updateGroup({
         groupId: group.groupId,
         description: editForm.description,
@@ -713,6 +721,7 @@ export function GroupPage() {
     if (!group || !inviteTarget.trim()) return;
     setInviteBusy(true); setInviteStatus(null);
     try {
+      if (!await ensureAccountUnlocked()) return;
       const address = await resolveAddress(inviteTarget);
       await inviteToGroup(group.groupId, address);
       setInviteStatus({ type: 'success', msg: 'Invite sent!' });

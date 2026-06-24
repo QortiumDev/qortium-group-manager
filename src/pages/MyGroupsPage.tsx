@@ -16,7 +16,7 @@ import { useColors } from '../theme/ColorTokensContext';
 import { tokens } from '../theme/tokens';
 import { accountAtom } from '../state/atoms';
 import { fetchMyGroups, fetchMyInvites, fetchAdminRequests, fetchGroup, fetchPrimaryNames, resolveAddress } from '../api/rest';
-import { joinGroup, leaveGroup, inviteToGroup, approveGroupJoinRequest } from '../api/qortal';
+import { joinGroup, leaveGroup, inviteToGroup, approveGroupJoinRequest, ensureAccountUnlocked } from '../api/qortal';
 import type { GroupData, GroupInvite, GroupJoinRequest, GroupWithJoinRequests } from '../types';
 
 type Status = { type: 'success' | 'error'; msg: string } | null;
@@ -35,6 +35,7 @@ function MyGroupRow({ group, isOwner, isAdmin, onLeft }: { group: GroupData; isO
     e.stopPropagation(); e.preventDefault();
     setBusy(true); setStatus(null);
     try {
+      if (!await ensureAccountUnlocked()) return;
       await leaveGroup(group.groupId);
       setStatus({ type: 'success', msg: `Left "${group.groupName}".` });
       setTimeout(() => onLeft(group.groupId), 1000);
@@ -52,6 +53,7 @@ function MyGroupRow({ group, isOwner, isAdmin, onLeft }: { group: GroupData; isO
     if (!inviteTarget.trim()) return;
     setInviteBusy(true); setInviteStatus(null);
     try {
+      if (!await ensureAccountUnlocked()) return;
       const address = await resolveAddress(inviteTarget);
       await inviteToGroup(group.groupId, address);
       setInviteStatus({ type: 'success', msg: 'Invite sent!' });
@@ -159,6 +161,7 @@ function InviteRow({ invite, onAccepted }: { invite: GroupInvite; onAccepted: (g
   async function handleAccept() {
     setBusy(true); setErr(null);
     try {
+      if (!await ensureAccountUnlocked()) return;
       await joinGroup(invite.groupId);
       onAccepted(invite.groupId);
     } catch (ex) {
@@ -205,6 +208,7 @@ function JoinRequestRow({ req, primaryName, onApproved }: JoinRequestRowProps) {
   async function handleApprove() {
     setBusy(true); setErr(null);
     try {
+      if (!await ensureAccountUnlocked()) return;
       await approveGroupJoinRequest(req.groupId, req.joiner);
       setDone(true);
       setTimeout(() => onApproved(req.joiner), 800);
