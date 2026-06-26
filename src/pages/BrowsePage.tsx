@@ -12,7 +12,7 @@ import PeopleIcon from '@mui/icons-material/People';
 import { useAtomValue } from 'jotai';
 import { useColors } from '../theme/ColorTokensContext';
 import { tokens } from '../theme/tokens';
-import { accountAtom } from '../state/atoms';
+import { accountAtom, uiStyleAtom } from '../state/atoms';
 import { fetchGroups, searchGroups, fetchGroupsByMember, fetchMyJoinRequests, fetchMemberKicks } from '../api/rest';
 import { joinGroup, ensureAccountUnlocked } from '../api/qortal';
 import type { GroupData, GroupKick } from '../types';
@@ -147,6 +147,10 @@ function GroupCard({ group, isMember, isPending, viewerKick, onJoined }: { group
 export function BrowsePage() {
   const c = useColors();
   const account = useAtomValue(accountAtom);
+  const uiStyle = useAtomValue(uiStyleAtom);
+  const isClassic = uiStyle === 'classic';
+  const pagePt = 'calc(var(--groups-top-bar-height, 52px) + 24px)';
+  const pageMaxWidth = c.layoutWideMaxWidth;
   const [searchParams] = useSearchParams();
   const initialMember = searchParams.get('member') ?? '';
   const [inputValue, setInputValue]     = useState(initialMember);
@@ -254,7 +258,7 @@ export function BrowsePage() {
   const displayed = sortGroups(groups, sort);
 
   return (
-    <Box sx={{ pt: `${tokens.spacing.topBarHeight + 24}px`, pb: 4, px: { xs: 2, md: 4 }, maxWidth: 720, mx: 'auto' }}>
+    <Box sx={{ pt: pagePt, pb: 4, px: { xs: isClassic ? 1.5 : 2, md: isClassic ? 3 : 4 }, maxWidth: pageMaxWidth, mx: 'auto' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
         <Typography sx={{ fontSize: '1.1rem', fontWeight: tokens.typography.weightBold, color: c.textPrimary }}>
           Browse Groups

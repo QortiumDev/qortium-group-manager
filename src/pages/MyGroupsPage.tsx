@@ -14,7 +14,7 @@ import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import { useAtomValue } from 'jotai';
 import { useColors } from '../theme/ColorTokensContext';
 import { tokens } from '../theme/tokens';
-import { accountAtom } from '../state/atoms';
+import { accountAtom, uiStyleAtom } from '../state/atoms';
 import { fetchMyGroups, fetchMyInvites, fetchAdminRequests, fetchGroup, fetchPrimaryNames, resolveAddress } from '../api/rest';
 import { joinGroup, leaveGroup, inviteToGroup, approveGroupJoinRequest, ensureAccountUnlocked } from '../api/qortal';
 import type { GroupData, GroupInvite, GroupJoinRequest, GroupWithJoinRequests } from '../types';
@@ -304,6 +304,10 @@ export function MyGroupsPage() {
   const c = useColors();
   const navigate = useNavigate();
   const account = useAtomValue(accountAtom);
+  const uiStyle = useAtomValue(uiStyleAtom);
+  const isClassic = uiStyle === 'classic';
+  const pagePt = 'calc(var(--groups-top-bar-height, 52px) + 24px)';
+  const pageMaxWidth = c.layoutWideMaxWidth;
 
   const [groups, setGroups]           = useState<GroupData[]>([]);
   const [invites, setInvites]         = useState<GroupInvite[]>([]);
@@ -355,7 +359,7 @@ export function MyGroupsPage() {
 
   if (loading) {
     return (
-      <Box sx={{ pt: `${tokens.spacing.topBarHeight + 24}px`, display: 'flex', justifyContent: 'center', py: 8 }}>
+      <Box sx={{ pt: pagePt, display: 'flex', justifyContent: 'center', py: 8 }}>
         <CircularProgress size={24} sx={{ color: c.accent }} />
       </Box>
     );
@@ -364,7 +368,7 @@ export function MyGroupsPage() {
   if (!account) return null;
 
   return (
-    <Box sx={{ pt: `${tokens.spacing.topBarHeight + 24}px`, pb: 4, px: { xs: 2, md: 4 }, maxWidth: 720, mx: 'auto' }}>
+    <Box sx={{ pt: pagePt, pb: 4, px: { xs: isClassic ? 1.5 : 2, md: isClassic ? 3 : 4 }, maxWidth: pageMaxWidth, mx: 'auto' }}>
       <Box sx={{ mb: 3 }}>
         <Typography sx={{ fontSize: '1.1rem', fontWeight: tokens.typography.weightBold, color: c.textPrimary }}>My Groups</Typography>
       </Box>

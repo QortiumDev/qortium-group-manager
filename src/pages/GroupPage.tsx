@@ -19,7 +19,7 @@ import GavelIcon from '@mui/icons-material/Gavel';
 import { useAtomValue } from 'jotai';
 import { useColors } from '../theme/ColorTokensContext';
 import { tokens } from '../theme/tokens';
-import { accountAtom } from '../state/atoms';
+import { accountAtom, uiStyleAtom } from '../state/atoms';
 import { fetchGroup, fetchGroupMembers, fetchAdminRequests, fetchPrimaryNames, fetchMyJoinRequests, fetchGroupBans, fetchMemberKicks, fetchGroupInvitesSent, fetchPendingGroupApprovals, resolveAddress } from '../api/rest';
 import {
   joinGroup, leaveGroup, inviteToGroup, updateGroup,
@@ -445,6 +445,10 @@ export function GroupPage() {
   const navigate = useNavigate();
   const c = useColors();
   const account = useAtomValue(accountAtom);
+  const uiStyle = useAtomValue(uiStyleAtom);
+  const isClassic = uiStyle === 'classic';
+  const pagePt = 'calc(var(--groups-top-bar-height, 52px) + 24px)';
+  const pageMaxWidth = c.layoutWideMaxWidth;
 
   const [group, setGroup]               = useState<GroupData | null>(null);
   const [members, setMembers]           = useState<GroupMember[]>([]);
@@ -741,7 +745,7 @@ export function GroupPage() {
 
   if (loading) {
     return (
-      <Box sx={{ pt: `${tokens.spacing.topBarHeight + 24}px`, display: 'flex', justifyContent: 'center', py: 8 }}>
+      <Box sx={{ pt: pagePt, display: 'flex', justifyContent: 'center', py: 8 }}>
         <CircularProgress size={28} sx={{ color: c.accent }} />
       </Box>
     );
@@ -749,14 +753,14 @@ export function GroupPage() {
 
   if (error || !group) {
     return (
-      <Box sx={{ pt: `${tokens.spacing.topBarHeight + 24}px`, pb: 4, px: { xs: 2, md: 4 }, maxWidth: 720, mx: 'auto' }}>
+      <Box sx={{ pt: pagePt, pb: 4, px: { xs: isClassic ? 1.5 : 2, md: isClassic ? 3 : 4 }, maxWidth: pageMaxWidth, mx: 'auto' }}>
         <Typography sx={{ color: c.error, fontSize: '0.85rem' }}>{error ?? 'Group not found.'}</Typography>
       </Box>
     );
   }
 
   return (
-    <Box sx={{ pt: `${tokens.spacing.topBarHeight + 24}px`, pb: 4, px: { xs: 2, md: 4 }, maxWidth: 720, mx: 'auto' }}>
+    <Box sx={{ pt: pagePt, pb: 4, px: { xs: isClassic ? 1.5 : 2, md: isClassic ? 3 : 4 }, maxWidth: pageMaxWidth, mx: 'auto' }}>
 
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
         <Button onClick={() => navigate(-1)} size="small" startIcon={<ArrowBackIcon />}
