@@ -7,8 +7,10 @@ import {
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import { useAtomValue } from 'jotai';
 import { useColors } from '../theme/ColorTokensContext';
 import { tokens } from '../theme/tokens';
+import { uiStyleAtom } from '../state/atoms';
 import { createGroup, ensureAccountUnlocked } from '../api/qortal';
 
 const APPROVAL_THRESHOLDS = ['NONE', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX'];
@@ -46,6 +48,10 @@ const DEFAULT_FORM: Form = {
 export function CreateGroupPage() {
   const navigate = useNavigate();
   const c = useColors();
+  const uiStyle = useAtomValue(uiStyleAtom);
+  const isClassic = uiStyle === 'classic';
+  const pagePt = 'calc(var(--groups-top-bar-height, 52px) + 24px)';
+  const pageMaxWidth = c.layoutMaxWidth;
 
   const [form, setForm] = useState<Form>(DEFAULT_FORM);
   const [busy, setBusy] = useState(false);
@@ -80,7 +86,7 @@ export function CreateGroupPage() {
 
   if (createdName !== null) {
     return (
-      <Box sx={{ pt: `${tokens.spacing.topBarHeight + 24}px`, pb: 4, px: { xs: 2, md: 4 }, maxWidth: 720, mx: 'auto' }}>
+      <Box sx={{ pt: pagePt, pb: 4, px: { xs: isClassic ? 1.5 : 2, md: isClassic ? 3 : 4 }, maxWidth: pageMaxWidth, mx: 'auto' }}>
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, py: 8 }}>
           <CheckCircleOutlineIcon sx={{ fontSize: '2.8rem', color: c.success }} />
           <Typography sx={{ fontSize: '1.1rem', fontWeight: tokens.typography.weightBlack, color: c.textPrimary, letterSpacing: '-0.01em' }}>
@@ -112,7 +118,7 @@ export function CreateGroupPage() {
   }
 
   return (
-    <Box sx={{ pt: `${tokens.spacing.topBarHeight + 24}px`, pb: 4, px: { xs: 2, md: 4 }, maxWidth: 720, mx: 'auto' }}>
+    <Box sx={{ pt: pagePt, pb: 4, px: { xs: isClassic ? 1.5 : 2, md: isClassic ? 3 : 4 }, maxWidth: pageMaxWidth, mx: 'auto' }}>
 
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
         <Button
