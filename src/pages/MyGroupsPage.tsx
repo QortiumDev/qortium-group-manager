@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Box, Button, CircularProgress, Typography, Alert, Chip,
   Dialog, DialogTitle, DialogContent, DialogActions, TextField,
+  Select, MenuItem,
 } from '@mui/material';
 import GroupsIcon from '@mui/icons-material/Groups';
 import MailOutlineIcon from '@mui/icons-material/MailOutline';
@@ -20,6 +21,31 @@ import { joinGroup, leaveGroup, inviteToGroup, approveGroupJoinRequest, ensureAc
 import type { GroupData, GroupInvite, GroupJoinRequest, GroupWithJoinRequests } from '../types';
 
 type Status = { type: 'success' | 'error'; msg: string } | null;
+
+type SortKey = 'default' | 'name_asc' | 'name_desc' | 'members_desc' | 'members_asc' | 'newest' | 'oldest';
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'default',      label: 'Default'         },
+  { value: 'name_asc',     label: 'Name (A-Z)'      },
+  { value: 'name_desc',    label: 'Name (Z-A)'      },
+  { value: 'members_desc', label: 'Most members'    },
+  { value: 'members_asc',  label: 'Fewest members'  },
+  { value: 'newest',       label: 'Newest'          },
+  { value: 'oldest',       label: 'Oldest'          },
+];
+
+function sortMyGroups(groups: GroupData[], sort: SortKey): GroupData[] {
+  if (sort === 'default') return groups;
+  return [...groups].sort((a, b) => {
+    if (sort === 'name_asc')     return a.groupName.localeCompare(b.groupName, undefined, { sensitivity: 'base' });
+    if (sort === 'name_desc')    return b.groupName.localeCompare(a.groupName, undefined, { sensitivity: 'base' });
+    if (sort === 'members_desc') return b.memberCount - a.memberCount;
+    if (sort === 'members_asc')  return a.memberCount - b.memberCount;
+    if (sort === 'newest')       return Number(b.groupId) - Number(a.groupId);
+    if (sort === 'oldest')       return Number(a.groupId) - Number(b.groupId);
+    return 0;
+  });
+}
 
 function MyGroupRow({ group, isOwner, isAdmin, onLeft }: { group: GroupData; isOwner: boolean; isAdmin: boolean; onLeft: (id: number) => void }) {
   const c = useColors();
@@ -314,6 +340,7 @@ export function MyGroupsPage() {
   const [adminRequests, setAdminReqs] = useState<GroupWithJoinRequests[]>([]);
   const [reqNames, setReqNames]       = useState<Map<string, string | null>>(new Map());
   const [loading, setLoading]         = useState(true);
+  const [sort, setSort]               = useState<SortKey>('default');
 
   const load = useCallback(async () => {
     if (!account) { setLoading(false); return; }
@@ -410,9 +437,19 @@ export function MyGroupsPage() {
       )}
 
       {/* My memberships */}
-      <Typography sx={{ fontSize: '0.65rem', fontWeight: tokens.typography.weightBold, letterSpacing: '0.14em', textTransform: 'uppercase', color: c.textSecondary, mb: 1.5 }}>
-        Memberships ({groups.length})
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
+        <Typography sx={{ fontSize: '0.65rem', fontWeight: tokens.typography.weightBold, letterSpacing: '0.14em', textTransform: 'uppercase', color: c.textSecondary, flex: 1 }}>
+          Memberships ({groups.length})
+        </Typography>
+        {groups.length > 1 && (
+          <Select
+            size="small" value={sort} onChange={e => setSort(e.target.value as SortKey)}
+            sx={{ fontSize: '0.72rem', height: 28, '& fieldset': { borderColor: c.borderLight }, '& .MuiSelect-select': { py: '3px', pr: '28px !important' } }}
+          >
+            {SORT_OPTIONS.map(o => <MenuItem key={o.value} value={o.value} sx={{ fontSize: '0.72rem' }}>{o.label}</MenuItem>)}
+          </Select>
+        )}
+      </Box>
 
       {groups.length === 0 ? (
         <Box sx={{ border: `${tokens.shape.borderWidth} dashed ${c.borderLight}`, borderRadius: `${tokens.shape.radius}px`, p: 4, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5 }}>
@@ -425,7 +462,7 @@ export function MyGroupsPage() {
         </Box>
       ) : (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-          {groups.map(g => (
+          {sortMyGroups(groups, sort).map(g => (
             <MyGroupRow
               key={g.groupId}
               group={g}

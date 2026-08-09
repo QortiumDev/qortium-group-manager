@@ -7,6 +7,8 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import PeopleIcon from '@mui/icons-material/People';
 import LockOpenIcon from '@mui/icons-material/LockOpen';
 import LockIcon from '@mui/icons-material/Lock';
@@ -456,6 +458,7 @@ export function GroupPage() {
   const [adminCount, setAdminCount]     = useState(0);
   const [memberOffset, setMemberOffset] = useState(0);
   const [hasMoreMembers, setHasMore]    = useState(false);
+  const [memberSortDesc, setMemberSortDesc] = useState(false);
   const [loadingMore, setLoadingMore]   = useState(false);
   const [pendingRequests, setPending]   = useState<GroupJoinRequest[]>([]);
   const [reqNames, setReqNames]         = useState<Map<string, string | null>>(new Map());
@@ -631,6 +634,14 @@ export function GroupPage() {
     () => (account && bansLoaded) ? (bans.find(b => b.offender === account.address) ?? null) : null,
     [bans, bansLoaded, account],
   );
+
+  const sortedMembers = useMemo(() => {
+    const sorted = [...members].sort((a, b) =>
+      (a.primaryName || a.member).localeCompare(b.primaryName || b.member, undefined, { sensitivity: 'base' })
+    );
+    if (memberSortDesc) sorted.reverse();
+    return sorted;
+  }, [members, memberSortDesc]);
 
   const loadMoreMembers = useCallback(async () => {
     if (!id) return;
@@ -998,10 +1009,17 @@ export function GroupPage() {
       )}
 
       {/* Members list */}
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
         <Typography sx={{ fontSize: '0.65rem', fontWeight: tokens.typography.weightBold, letterSpacing: '0.14em', textTransform: 'uppercase', color: c.textSecondary, flex: 1 }}>
           Members
         </Typography>
+        <Button
+          size="small" onClick={() => setMemberSortDesc(v => !v)}
+          startIcon={memberSortDesc ? <ArrowDownwardIcon sx={{ fontSize: '0.75rem !important' }} /> : <ArrowUpwardIcon sx={{ fontSize: '0.75rem !important' }} />}
+          sx={{ color: c.textSecondary, fontSize: '0.65rem', fontWeight: tokens.typography.weightBold, minWidth: 0, px: 1, '&:hover': { color: c.accent, bgcolor: 'transparent' } }}
+        >
+          {memberSortDesc ? 'Z-A' : 'A-Z'}
+        </Button>
         {(isOwner || isAdmin) && (
           <Button size="small" variant="outlined" onClick={() => { setInviteTarget(''); setInviteStatus(null); setInviteOpen(true); }}
             sx={{ borderColor: c.accent, color: c.accent, borderRadius: '50px', fontSize: '0.65rem', px: 1.5, py: 0.25, '&:hover': { bgcolor: `${c.accent}12`, borderColor: c.accent } }}>
@@ -1011,12 +1029,12 @@ export function GroupPage() {
       </Box>
 
       <Box sx={{ border: `${tokens.shape.borderWidth} solid ${c.borderLight}`, borderRadius: `${tokens.shape.radius}px`, bgcolor: c.surface, overflow: 'hidden', mb: 2 }}>
-        {members.length === 0 ? (
+        {sortedMembers.length === 0 ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
             <Typography sx={{ fontSize: '0.85rem', color: c.textSecondary }}>No members found.</Typography>
           </Box>
         ) : (
-          members.map(m => (
+          sortedMembers.map(m => (
             <MemberRow key={m.member} member={m}
               groupId={group.groupId} groupOwnerAddress={group.owner}
               viewerAddress={account?.address} isViewerOwner={isOwner} isViewerAdmin={isAdmin}
