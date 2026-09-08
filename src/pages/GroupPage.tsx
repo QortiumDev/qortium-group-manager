@@ -28,9 +28,11 @@ import {
   getMintingStatus, startMinting,
   addGroupAdmin, removeGroupAdmin, kickFromGroup, banFromGroup, cancelGroupBan,
   approveGroupJoinRequest, cancelGroupInvite, fetchGroupKicks, groupApproval,
-  ensureAccountUnlocked,
+  ensureAccountUnlocked, publishGroupAvatar,
 } from '../api/qortal';
 import { AddressLink } from '../components/common/AddressLink';
+import { GroupAvatarDisplay } from '../components/group/GroupAvatarDisplay';
+import { GroupAvatarEditor } from '../components/group/GroupAvatarEditor';
 import type { GroupData, GroupMember, GroupJoinRequest, MintingStatus, GroupBan, GroupKick, PendingProposal } from '../types';
 
 const MEMBER_LIMIT = 20;
@@ -481,6 +483,10 @@ export function GroupPage() {
   const [editBusy, setEditBusy]   = useState(false);
   const [editStatus, setEditStatus] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
+  const [avatarKey, setAvatarKey]     = useState(0);
+  const [avatarBusy, setAvatarBusy]   = useState(false);
+  const [avatarStatus, setAvatarStatus] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+
   const [bans, setBans]         = useState<GroupBan[]>([]);
   const [bansLoaded, setBansLoaded] = useState(false);
   const [viewerKick, setViewerKick] = useState<GroupKick | null>(null);
@@ -721,6 +727,19 @@ export function GroupPage() {
     } finally { setEditBusy(false); }
   }
 
+  async function handleAvatarFile(file: File) {
+    if (!group || !account?.name) return;
+    setAvatarBusy(true); setAvatarStatus(null);
+    try {
+      if (!await ensureAccountUnlocked()) return;
+      await publishGroupAvatar(account.name, group.groupId, file);
+      setAvatarStatus({ type: 'success', msg: 'Group avatar updated.' });
+      setAvatarKey(k => k + 1);
+    } catch (e) {
+      setAvatarStatus({ type: 'error', msg: e instanceof Error ? e.message : String(e) });
+    } finally { setAvatarBusy(false); }
+  }
+
   function handleAdminToggled(address: string, nowAdmin: boolean) {
     setMembers(prev => prev.map(m => m.member === address ? { ...m, isAdmin: nowAdmin } : m));
     setAdminCount(prev => prev + (nowAdmin ? 1 : -1));
@@ -781,46 +800,68 @@ export function GroupPage() {
       </Box>
 
       {/* Group header */}
-      <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1, flexWrap: 'wrap' }}>
-          <Typography sx={{ fontSize: '1.4rem', fontWeight: tokens.typography.weightBlack, color: c.textPrimary, letterSpacing: '-0.01em' }}>
-            {group.groupName}
-          </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            {group.isOpen
-              ? <LockOpenIcon sx={{ fontSize: '0.8rem', color: c.success }} />
-              : <LockIcon     sx={{ fontSize: '0.8rem', color: c.textSecondary }} />}
-            <Typography sx={{ fontSize: '0.65rem', fontWeight: tokens.typography.weightBold, letterSpacing: '0.08em', textTransform: 'uppercase', color: group.isOpen ? c.success : c.textSecondary }}>
-              {group.isOpen ? 'Open' : 'Closed'}
-            </Typography>
+      <Box sx={{ mb: 3, display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+        {isOwner && account?.name ? (
+          <Box sx={{ position: 'relative', flexShrink: 0 }}>
+            <GroupAvatarEditor key={avatarKey} groupId={group.groupId} size={72} onFileSelected={file => void handleAvatarFile(file)} />
+            {avatarBusy && (
+              <Box sx={{ position: 'absolute', inset: 0, borderRadius: '50%', bgcolor: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <CircularProgress size={20} sx={{ color: '#fff' }} />
+              </Box>
+            )}
           </Box>
-          {isOwner && <Chip label="You own this" size="small" sx={{ fontSize: '0.58rem', height: 16, bgcolor: `${c.accent}22`, color: c.accent, border: `1px solid ${c.accent}44` }} />}
-          {!isOwner && isAdmin && <Chip label="Admin" size="small" sx={{ fontSize: '0.58rem', height: 16, bgcolor: `${c.success}22`, color: c.success, border: `1px solid ${c.success}44` }} />}
-        </Box>
-
-        {group.description && (
-          <Typography sx={{ fontSize: '0.85rem', color: c.textSecondary, lineHeight: 1.6, mb: 1.5 }}>
-            {group.description}
-          </Typography>
+        ) : (
+          <GroupAvatarDisplay key={avatarKey} groupId={group.groupId} size={72} />
         )}
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <PeopleIcon sx={{ fontSize: '0.8rem', color: c.textSecondary }} />
-            <Typography sx={{ fontSize: '0.75rem', color: c.textSecondary }}>
-              {memberCount.toLocaleString()} members · {adminCount} admins
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1, flexWrap: 'wrap' }}>
+            <Typography sx={{ fontSize: '1.4rem', fontWeight: tokens.typography.weightBlack, color: c.textPrimary, letterSpacing: '-0.01em' }}>
+              {group.groupName}
             </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              {group.isOpen
+                ? <LockOpenIcon sx={{ fontSize: '0.8rem', color: c.success }} />
+                : <LockIcon     sx={{ fontSize: '0.8rem', color: c.textSecondary }} />}
+              <Typography sx={{ fontSize: '0.65rem', fontWeight: tokens.typography.weightBold, letterSpacing: '0.08em', textTransform: 'uppercase', color: group.isOpen ? c.success : c.textSecondary }}>
+                {group.isOpen ? 'Open' : 'Closed'}
+              </Typography>
+            </Box>
+            {isOwner && <Chip label="You own this" size="small" sx={{ fontSize: '0.58rem', height: 16, bgcolor: `${c.accent}22`, color: c.accent, border: `1px solid ${c.accent}44` }} />}
+            {!isOwner && isAdmin && <Chip label="Admin" size="small" sx={{ fontSize: '0.58rem', height: 16, bgcolor: `${c.success}22`, color: c.success, border: `1px solid ${c.success}44` }} />}
           </Box>
-          {group.ownerPrimaryName && (
-            <Typography sx={{ fontSize: '0.75rem', color: c.textSecondary }}>
-              Owner: <Box component="span" sx={{ color: c.textPrimary, fontWeight: tokens.typography.weightBold }}>{group.ownerPrimaryName}</Box>
+
+          {group.description && (
+            <Typography sx={{ fontSize: '0.85rem', color: c.textSecondary, lineHeight: 1.6, mb: 1.5 }}>
+              {group.description}
             </Typography>
           )}
-          {group.approvalThreshold && group.approvalThreshold !== 'NONE' && (
-            <Typography sx={{ fontSize: '0.75rem', color: c.textSecondary }}>
-              Approval: {group.approvalThreshold.replace(/_/g, ' ')}
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <PeopleIcon sx={{ fontSize: '0.8rem', color: c.textSecondary }} />
+              <Typography sx={{ fontSize: '0.75rem', color: c.textSecondary }}>
+                {memberCount.toLocaleString()} members · {adminCount} admins
+              </Typography>
+            </Box>
+            {group.ownerPrimaryName && (
+              <Typography sx={{ fontSize: '0.75rem', color: c.textSecondary }}>
+                Owner: <Box component="span" sx={{ color: c.textPrimary, fontWeight: tokens.typography.weightBold }}>{group.ownerPrimaryName}</Box>
+              </Typography>
+            )}
+            {group.approvalThreshold && group.approvalThreshold !== 'NONE' && (
+              <Typography sx={{ fontSize: '0.75rem', color: c.textSecondary }}>
+                Approval: {group.approvalThreshold.replace(/_/g, ' ')}
+              </Typography>
+            )}
+          </Box>
+
+          {isOwner && !account?.name && (
+            <Typography sx={{ fontSize: '0.72rem', color: c.textSecondary, mt: 1 }}>
+              Register a name to publish a group avatar.
             </Typography>
           )}
+          {avatarStatus && <Alert severity={avatarStatus.type} sx={{ mt: 1.5, fontSize: '0.78rem', py: 0 }}>{avatarStatus.msg}</Alert>}
         </Box>
       </Box>
 

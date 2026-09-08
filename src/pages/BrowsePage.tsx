@@ -15,6 +15,7 @@ import { tokens } from '../theme/tokens';
 import { accountAtom, uiStyleAtom } from '../state/atoms';
 import { fetchGroups, searchGroups, fetchGroupsByMember, fetchMyJoinRequests, fetchMemberKicks } from '../api/rest';
 import { joinGroup, ensureAccountUnlocked } from '../api/qortal';
+import { GroupAvatarDisplay } from '../components/group/GroupAvatarDisplay';
 import type { GroupData, GroupKick } from '../types';
 
 const LIMIT = 20;
@@ -87,11 +88,12 @@ function GroupCard({ group, isMember, isPending, viewerKick, onJoined }: { group
         transition: '0.15s ease',
       }}
     >
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
-        <Typography sx={{ fontSize: '0.95rem', fontWeight: tokens.typography.weightBold, color: c.textPrimary, flex: 1, lineHeight: 1.3 }}>
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.25, mb: 1 }}>
+        <GroupAvatarDisplay groupId={group.groupId} size={36} />
+        <Typography sx={{ fontSize: '0.95rem', fontWeight: tokens.typography.weightBold, color: c.textPrimary, flex: 1, lineHeight: 1.3, mt: '4px' }}>
           {group.groupName}
         </Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0, mt: '4px' }}>
           {group.isOpen
             ? <LockOpenIcon sx={{ fontSize: '0.75rem', color: c.success }} />
             : <LockIcon     sx={{ fontSize: '0.75rem', color: c.textSecondary }} />}

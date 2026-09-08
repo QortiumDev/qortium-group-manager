@@ -13,6 +13,7 @@ import { tokens } from '../theme/tokens';
 import { uiStyleAtom } from '../state/atoms';
 import { fetchGroupsByMember, fetchPrimaryNames, fetchMemberKicks } from '../api/rest';
 import { fetchMemberBans } from '../api/qortal';
+import { GroupAvatarDisplay } from '../components/group/GroupAvatarDisplay';
 import type { GroupData, GroupKick, GroupBan } from '../types';
 
 export function AddressGroupsPage() {
@@ -95,6 +96,7 @@ export function AddressGroupsPage() {
                   cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2,
                   '&:hover': { borderColor: c.accent }, transition: '0.15s ease',
                 }}>
+                  <GroupAvatarDisplay groupId={g.groupId} size={32} />
                   <Box sx={{ flex: 1, minWidth: 0 }}>
                     <Typography sx={{ fontSize: '0.9rem', fontWeight: tokens.typography.weightBold, color: c.textPrimary }}>
                       {g.groupName}

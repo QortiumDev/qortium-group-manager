@@ -18,6 +18,7 @@ import { tokens } from '../theme/tokens';
 import { accountAtom, uiStyleAtom } from '../state/atoms';
 import { fetchMyGroups, fetchMyInvites, fetchAdminRequests, fetchGroup, fetchPrimaryNames, resolveAddress } from '../api/rest';
 import { joinGroup, leaveGroup, inviteToGroup, approveGroupJoinRequest, ensureAccountUnlocked } from '../api/qortal';
+import { GroupAvatarDisplay } from '../components/group/GroupAvatarDisplay';
 import type { GroupData, GroupInvite, GroupJoinRequest, GroupWithJoinRequests } from '../types';
 
 type Status = { type: 'success' | 'error'; msg: string } | null;
@@ -101,11 +102,12 @@ function MyGroupRow({ group, isOwner, isAdmin, onLeft }: { group: GroupData; isO
           '&:hover': { borderColor: c.accent },
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 0.75 }}>
-          <Typography sx={{ fontSize: '0.95rem', fontWeight: tokens.typography.weightBold, color: c.textPrimary, flex: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.25, mb: 0.75 }}>
+          <GroupAvatarDisplay groupId={group.groupId} size={36} />
+          <Typography sx={{ fontSize: '0.95rem', fontWeight: tokens.typography.weightBold, color: c.textPrimary, flex: 1, mt: '4px' }}>
             {group.groupName}
           </Typography>
-          <Box sx={{ display: 'flex', gap: 0.5, flexShrink: 0 }}>
+          <Box sx={{ display: 'flex', gap: 0.5, flexShrink: 0, mt: '4px' }}>
             {isOwner && <Chip label="Owner" size="small" sx={{ fontSize: '0.58rem', height: 16, bgcolor: `${c.accent}22`, color: c.accent, border: `1px solid ${c.accent}44` }} />}
             {!isOwner && isAdmin && <Chip label="Admin" size="small" sx={{ fontSize: '0.58rem', height: 16, bgcolor: `${c.success}22`, color: c.success, border: `1px solid ${c.success}44` }} />}
           </Box>

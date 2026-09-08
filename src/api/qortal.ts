@@ -1,3 +1,36 @@
+function fileToBase64(file: File | Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => { resolve((reader.result as string).split(',')[1] ?? ''); };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function resizeImage(file: File, maxDim: number, quality: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
+      canvas.toBlob(
+        blob => (blob ? resolve(blob) : reject(new Error('canvas resize failed'))),
+        'image/jpeg',
+        quality,
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
+    img.src = url;
+  });
+}
+
 export async function getUserAccount(): Promise<{ address: string; name: string | null }> {
   const res = await qdnRequest({ action: 'GET_SELECTED_ACCOUNT' }) as { address: string; name: string | null };
   return { address: res.address, name: res.name || null };
@@ -55,6 +88,17 @@ export async function updateGroup(params: UpdateGroupParams): Promise<void> {
     newMinimumBlockDelay: params.minimumBlockDelay,
     newMaximumBlockDelay: params.maximumBlockDelay,
   });
+}
+
+// Group avatars are a pointer, not a raw QDN identifier convention: the actual
+// image is published under the owner's own registered name (only a name can
+// hold a QDN resource), then SET_GROUP_AVATAR points the group at it. Only the
+// group owner may set this pointer.
+export async function publishGroupAvatar(ownerName: string, groupId: number, file: File): Promise<void> {
+  const toUpload = file.type === 'image/gif' ? file : await resizeImage(file, 800, 0.85);
+  const identifier = `qortium-group-avatar-v1-${groupId}`;
+  await qdnRequest({ action: 'PUBLISH_QDN_RESOURCE', service: 'THUMBNAIL', identifier, name: ownerName, data64: await fileToBase64(toUpload) });
+  await qdnRequest({ action: 'SET_GROUP_AVATAR', groupId, avatar: { service: 'THUMBNAIL', name: ownerName, identifier } });
 }
 
 export async function addGroupAdmin(groupId: number, member: string): Promise<void> {
