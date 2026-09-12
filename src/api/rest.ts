@@ -1,4 +1,4 @@
-import type { GroupData, GroupMember, GroupMembers, GroupInvite, GroupWithJoinRequests, GroupJoinRequest, GroupBan, GroupKick, PendingProposal } from '../types';
+import type { GroupData, GroupMember, GroupMembers, GroupInvite, GroupWithJoinRequests, GroupJoinRequest, GroupBan, GroupKick, PendingProposal, NodeMintingAccount, RewardShare, NodeStatus } from '../types';
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path);
@@ -14,6 +14,23 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${path}`);
   return res.json() as Promise<T>;
+}
+
+// GET_MINTING_STATUS fallback for hosts that don't advertise it yet (the
+// action is new to the Qortium Home bridge). These deliberately throw on
+// failure rather than swallowing, so the caller in api/qortal.ts can tell a
+// public/unauthorized node apart from a real reward-share reader.
+export async function fetchSelfRewardShares(address: string): Promise<RewardShare[]> {
+  const encoded = encodeURIComponent(address);
+  return get<RewardShare[]>(`/addresses/rewardshares?minters=${encoded}&recipients=${encoded}`);
+}
+
+export async function fetchMintingAccountsRaw(): Promise<NodeMintingAccount[]> {
+  return get<NodeMintingAccount[]>('/admin/mintingaccounts');
+}
+
+export async function fetchNodeStatus(): Promise<NodeStatus> {
+  return get<NodeStatus>('/admin/status');
 }
 
 export async function fetchPrimaryNames(addresses: string[]): Promise<Map<string, string | null>> {

@@ -1,3 +1,5 @@
+import { fetchSelfRewardShares, fetchMintingAccountsRaw, fetchNodeStatus } from './rest';
+
 function fileToBase64(file: File | Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -90,6 +92,13 @@ export async function updateGroup(params: UpdateGroupParams): Promise<void> {
   });
 }
 
+// Sets the account's default group context (Qortium/Qortal's SET_GROUP
+// transaction) - unrelated to group admin roles. A no-op when the group is
+// already the account's default; Home answers that without erring.
+export async function setDefaultGroup(groupId: number): Promise<void> {
+  await qdnRequest({ action: 'SET_GROUP', defaultGroupId: groupId });
+}
+
 // Group avatars are a pointer, not a raw QDN identifier convention: the actual
 // image is published under the owner's own registered name (only a name can
 // hold a QDN resource), then SET_GROUP_AVATAR points the group at it. Only the
@@ -168,6 +177,19 @@ export async function supportsNotifications(): Promise<boolean> {
   } catch { return false; }
 }
 
+// Shared SHOW_ACTIONS read for feature-detecting bridge actions the connected
+// Home host may not advertise yet (e.g. GET_MINTING_STATUS, START_MINTING).
+export async function fetchBridgeActions(): Promise<string[]> {
+  try {
+    const actions = await qdnRequest({ action: 'SHOW_ACTIONS' });
+    return Array.isArray(actions) ? actions.filter((a): a is string => typeof a === 'string') : [];
+  } catch { return []; }
+}
+
+function hasBridgeAction(actions: string[] | undefined, action: string): boolean {
+  return actions?.some((candidate) => candidate.toUpperCase() === action.toUpperCase()) ?? false;
+}
+
 export async function getNotificationRules(): Promise<NotificationRule[]> {
   try {
     const res = await qdnRequest({ action: 'NOTIFICATION_GET' });
@@ -187,8 +209,47 @@ export async function removeNotificationRules(notificationIds?: string[]): Promi
   });
 }
 
-export async function getMintingStatus(address: string): Promise<import('../types').MintingStatus> {
-  return qdnRequest({ action: 'GET_MINTING_STATUS', address }) as Promise<import('../types').MintingStatus>;
+// GET_MINTING_STATUS is new to the Qortium Home bridge and not advertised by
+// every host yet. On a host that lacks it, derive the same status from public
+// reads (reward shares) plus the admin-only /admin/mintingaccounts and
+// /admin/status routes, which only resolve on the local/authenticated node -
+// a public read-only node degrades to the same unknown (null) fields
+// GET_MINTING_STATUS itself would report there. Mirrors qortium-chat/
+// qortium-minting's coreApi.ts verbatim.
+export async function getMintingStatus(address: string, actions?: string[]): Promise<import('../types').MintingStatus> {
+  if (hasBridgeAction(actions, 'GET_MINTING_STATUS')) {
+    return qdnRequest({ action: 'GET_MINTING_STATUS', address }) as Promise<import('../types').MintingStatus>;
+  }
+
+  const rewardShares = await fetchSelfRewardShares(address);
+  const hasRewardShare = rewardShares.some(
+    (rewardShare) => rewardShare.mintingAccount === address && rewardShare.recipient === address,
+  );
+
+  try {
+    const mintingAccounts = await fetchMintingAccountsRaw();
+    const keyOnNode = mintingAccounts.some(
+      (mintingAccount) => mintingAccount.mintingAccount === address && mintingAccount.recipientAccount === address,
+    );
+    const nodeStatus = await fetchNodeStatus();
+
+    return {
+      address,
+      hasRewardShare,
+      isMinting: hasRewardShare && keyOnNode,
+      keyOnNode,
+      nodeMintingPossible: nodeStatus.isMintingPossible === true,
+    };
+  } catch {
+    // The connected node does not expose its minting state (for example a public read-only node).
+    return {
+      address,
+      hasRewardShare,
+      isMinting: null,
+      keyOnNode: null,
+      nodeMintingPossible: null,
+    };
+  }
 }
 
 export async function startMinting(): Promise<import('../types').StartMintingResult> {

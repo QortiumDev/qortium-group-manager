@@ -24,8 +24,8 @@ import { tokens } from '../theme/tokens';
 import { accountAtom, uiStyleAtom } from '../state/atoms';
 import { fetchGroup, fetchGroupMembers, fetchAdminRequests, fetchPrimaryNames, fetchMyJoinRequests, fetchGroupBans, fetchMemberKicks, fetchGroupInvitesSent, fetchPendingGroupApprovals, resolveAddress } from '../api/rest';
 import {
-  joinGroup, leaveGroup, inviteToGroup, updateGroup,
-  getMintingStatus, startMinting,
+  joinGroup, leaveGroup, inviteToGroup, updateGroup, setDefaultGroup,
+  getMintingStatus, startMinting, fetchBridgeActions,
   addGroupAdmin, removeGroupAdmin, kickFromGroup, banFromGroup, cancelGroupBan,
   approveGroupJoinRequest, cancelGroupInvite, fetchGroupKicks, groupApproval,
   ensureAccountUnlocked, publishGroupAvatar,
@@ -33,6 +33,7 @@ import {
 import { AddressLink } from '../components/common/AddressLink';
 import { GroupAvatarDisplay } from '../components/group/GroupAvatarDisplay';
 import { GroupAvatarEditor } from '../components/group/GroupAvatarEditor';
+import { isGroupInviteExpired } from '../types';
 import type { GroupData, GroupMember, GroupJoinRequest, MintingStatus, GroupBan, GroupKick, PendingProposal } from '../types';
 
 const MEMBER_LIMIT = 20;
@@ -400,6 +401,10 @@ function PendingInviteRow({ inv, displayName, onCanceled }: PendingInviteRowProp
   const [err, setErr]   = useState<string | null>(null);
 
   async function handleCancel() {
+    if (isGroupInviteExpired(inv)) {
+      onCanceled(inv.invitee);
+      return;
+    }
     setBusy(true); setErr(null);
     try {
       await cancelGroupInvite(inv.groupId, inv.invitee);
@@ -475,6 +480,7 @@ export function GroupPage() {
 
   const [mintingStatus, setMintingStatus]           = useState<MintingStatus | null>(null);
   const [mintingBusy, setMintingBusy]               = useState(false);
+  const [bridgeActions, setBridgeActions]           = useState<string[]>([]);
   const [rewardSharePending, setRewardSharePending] = useState(false);
   const [mintingError, setMintingError]             = useState<string | null>(null);
 
@@ -518,7 +524,10 @@ export function GroupPage() {
     ]).then(async ([g, gm]) => {
       setGroup(g);
       if (g.isMintingGroup && account) {
-        getMintingStatus(account.address).then(setMintingStatus).catch(() => {});
+        fetchBridgeActions().then((fetchedActions) => {
+          setBridgeActions(fetchedActions);
+          getMintingStatus(account.address, fetchedActions).then(setMintingStatus).catch(() => {});
+        });
       }
       setEditForm({
         description: g.description ?? '',
@@ -596,7 +605,8 @@ export function GroupPage() {
   useEffect(() => {
     if (!id || (!isOwner && !isAdmin)) return;
     const groupId = parseInt(id);
-    void fetchGroupInvitesSent(groupId).then(async invs => {
+    void fetchGroupInvitesSent(groupId).then(async rawInvs => {
+      const invs = rawInvs.filter(i => !isGroupInviteExpired(i));
       setSentInvites(invs);
       if (invs.length > 0) {
         const nameMap = await fetchPrimaryNames(invs.map(i => i.invitee));
@@ -693,13 +703,25 @@ export function GroupPage() {
     } finally { setActionBusy(false); }
   }
 
+  async function handleSetDefaultGroup() {
+    if (!group) return;
+    setActionBusy(true); setActionStatus(null);
+    try {
+      if (!await ensureAccountUnlocked()) return;
+      await setDefaultGroup(group.groupId);
+      setActionStatus({ type: 'success', msg: `"${group.groupName}" is now your default group.` });
+    } catch (e) {
+      setActionStatus({ type: 'error', msg: e instanceof Error ? e.message : String(e) });
+    } finally { setActionBusy(false); }
+  }
+
   async function handleStartMinting() {
     if (!account || mintingBusy) return;
     setMintingBusy(true); setMintingError(null);
     try {
       const result = await startMinting();
       if (result.rewardSharePending) setRewardSharePending(true);
-      const updated = await getMintingStatus(account.address);
+      const updated = await getMintingStatus(account.address, bridgeActions);
       setMintingStatus(updated);
     } catch (e) {
       setMintingError(e instanceof Error ? e.message : String(e));
@@ -761,7 +783,7 @@ export function GroupPage() {
       setInviteStatus({ type: 'success', msg: 'Invite sent!' });
       setTimeout(async () => {
         setInviteOpen(false); setInviteTarget(''); setInviteStatus(null);
-        const invs = await fetchGroupInvitesSent(group.groupId);
+        const invs = (await fetchGroupInvitesSent(group.groupId)).filter(i => !isGroupInviteExpired(i));
         setSentInvites(invs);
         if (invs.length > 0) {
           const nameMap = await fetchPrimaryNames(invs.map(i => i.invitee));
@@ -788,6 +810,11 @@ export function GroupPage() {
       </Box>
     );
   }
+
+  // START_MINTING is new to the Qortium Home bridge - GET_MINTING_STATUS can
+  // fall back to public/admin reads on an older host (see api/qortal.ts), but
+  // there is no equivalent fallback for actually starting minting.
+  const canStartMinting = bridgeActions.includes('START_MINTING');
 
   return (
     <Box sx={{ pt: pagePt, pb: 4, px: { xs: isClassic ? 1.5 : 2, md: isClassic ? 3 : 4 }, maxWidth: pageMaxWidth, mx: 'auto' }}>
@@ -910,19 +937,35 @@ export function GroupPage() {
         </Box>
       )}
 
+      {/* Set as default group — any member, including the owner */}
+      {account && (isOwner || isMember) && !viewerBan && (
+        <Box sx={{ mb: 3 }}>
+          <Button variant="outlined" disabled={actionBusy} onClick={() => void handleSetDefaultGroup()}
+            sx={{ borderColor: c.borderLight, color: c.textSecondary, borderRadius: '50px', fontSize: '0.75rem', px: 2.5, '&:hover': { bgcolor: `${c.accent}12`, borderColor: c.accent, color: c.accent }, '&.Mui-disabled': { opacity: 0.35 } }}>
+            {actionBusy ? <CircularProgress size={14} sx={{ color: c.textSecondary }} /> : 'Set as default group'}
+          </Button>
+        </Box>
+      )}
+
       {/* Minting group: start minting */}
       {group.isMintingGroup && account && isMember && mintingStatus && mintingStatus.isMinting !== true && (
         <Box sx={{ mb: 3 }}>
           <Button
             variant="contained" disableElevation
-            disabled={mintingBusy || mintingStatus.keyOnNode !== false || rewardSharePending}
+            disabled={mintingBusy || mintingStatus.keyOnNode !== false || rewardSharePending || !canStartMinting}
             onClick={() => void handleStartMinting()}
+            title={!canStartMinting ? 'Requires a newer version of Qortium Home.' : undefined}
             sx={{ bgcolor: c.accent, color: c.accentText, borderRadius: '50px', fontSize: '0.75rem', px: 2.5, '&:hover': { bgcolor: c.accentHover }, '&.Mui-disabled': { opacity: 0.35, bgcolor: c.accent, color: c.accentText } }}
           >
             {mintingBusy ? <CircularProgress size={14} sx={{ color: c.accentText }} />
               : rewardSharePending ? 'Authorization Pending'
               : 'Start Minting'}
           </Button>
+          {!canStartMinting && mintingStatus.keyOnNode === false && (
+            <Typography sx={{ fontSize: '0.72rem', color: c.textSecondary, mt: 0.75 }}>
+              Starting minting from this app requires a newer version of Qortium Home.
+            </Typography>
+          )}
           {mintingError && <Typography sx={{ fontSize: '0.72rem', color: c.error, mt: 0.75 }}>{mintingError}</Typography>}
         </Box>
       )}

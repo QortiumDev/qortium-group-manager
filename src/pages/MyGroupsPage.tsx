@@ -19,6 +19,7 @@ import { accountAtom, uiStyleAtom } from '../state/atoms';
 import { fetchMyGroups, fetchMyInvites, fetchAdminRequests, fetchGroup, fetchPrimaryNames, resolveAddress } from '../api/rest';
 import { joinGroup, leaveGroup, inviteToGroup, approveGroupJoinRequest, ensureAccountUnlocked } from '../api/qortal';
 import { GroupAvatarDisplay } from '../components/group/GroupAvatarDisplay';
+import { isGroupInviteExpired } from '../types';
 import type { GroupData, GroupInvite, GroupJoinRequest, GroupWithJoinRequests } from '../types';
 
 type Status = { type: 'success' | 'error'; msg: string } | null;
@@ -187,6 +188,10 @@ function InviteRow({ invite, onAccepted }: { invite: GroupInvite; onAccepted: (g
   }, [invite.groupId]);
 
   async function handleAccept() {
+    if (isGroupInviteExpired(invite)) {
+      setErr('This invite has expired.');
+      return;
+    }
     setBusy(true); setErr(null);
     try {
       if (!await ensureAccountUnlocked()) return;
@@ -354,7 +359,7 @@ export function MyGroupsPage() {
         fetchAdminRequests(account.address),
       ]);
       setGroups(Array.isArray(gs) ? gs : []);
-      setInvites(Array.isArray(invs) ? invs : []);
+      setInvites(Array.isArray(invs) ? invs.filter(i => !isGroupInviteExpired(i)) : []);
 
       const filtered = Array.isArray(reqs)
         ? reqs.filter(r => Array.isArray(r.joinRequests) && r.joinRequests.length > 0)

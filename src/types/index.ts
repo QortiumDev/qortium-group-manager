@@ -35,6 +35,26 @@ export interface StartMintingResult {
   transactionSignature?: string;
 }
 
+// Shape returned by GET /admin/mintingaccounts (Core MintingAccountData JSON).
+// Used only as a GET_MINTING_STATUS fallback on hosts that don't advertise it.
+export interface NodeMintingAccount {
+  address?: string;
+  mintingAccount?: string;
+  publicKey?: string;
+  recipientAccount?: string;
+}
+
+// Shape returned by GET /addresses/rewardshares.
+export interface RewardShare {
+  mintingAccount?: string;
+  recipient?: string;
+}
+
+// Shape returned by GET /admin/status (only the field this app reads).
+export interface NodeStatus {
+  isMintingPossible?: boolean;
+}
+
 export interface GroupMember {
   member: string;
   joined?: number;
@@ -53,6 +73,13 @@ export interface GroupInvite {
   inviter: string;
   invitee: string;
   expiry?: number;
+}
+
+// Core never prunes GroupInvites rows on natural expiry (only on cancel/join/kick/ban),
+// and the /groups/invites REST endpoints return them unfiltered, so the client must
+// hide expired invites itself - accepting/canceling one hits a stale row on-chain.
+export function isGroupInviteExpired(invite: Pick<GroupInvite, 'expiry'>): boolean {
+  return invite.expiry != null && invite.expiry < Date.now();
 }
 
 export interface GroupJoinRequest {
