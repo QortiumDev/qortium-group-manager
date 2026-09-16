@@ -6,8 +6,9 @@ import { GroupPage } from '../pages/GroupPage';
 import { CreateGroupPage } from '../pages/CreateGroupPage';
 import { AddressGroupsPage } from '../pages/AddressGroupsPage';
 import { useIframe } from '../hooks/useIframeListener';
+import { resolveStartRoute } from './startRoute';
 
-const _startRoute = new URLSearchParams(window.location.search).get('_route');
+const _startRoute = resolveStartRoute(window.location.search);
 if (_startRoute) window.location.hash = _startRoute;
 
 function Layout() {

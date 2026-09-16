@@ -13,6 +13,18 @@ npm run build
 
 Output is a single HTML file at `dist/index.html`, ready to publish as a Qortium APP.
 
+## Deep links
+
+Home and other apps open Groups at its canonical address with a top-level
+query string:
+
+- `?_route=<hash route>` — start on any hash route (existing hand-off).
+- `?group=<id>` — start on that group's page. This is the Home `groups`
+  assignment-role contract (qortium-home `docs/HOME_APP_ASSIGNMENTS.md`,
+  "Roles used by context menus"); Home's "Group info" context-menu item uses it.
+
+`_route` wins when both are present.
+
 ## Home Display Settings
 
 When launched from Qortium Home, the app reads display settings from render URL
