@@ -106,7 +106,7 @@ export async function setDefaultGroup(groupId: number): Promise<void> {
 export async function publishGroupAvatar(ownerName: string, groupId: number, file: File): Promise<void> {
   const toUpload = file.type === 'image/gif' ? file : await resizeImage(file, 800, 0.85);
   const identifier = `qortium-group-avatar-v1-${groupId}`;
-  await qdnRequest({ action: 'PUBLISH_QDN_RESOURCE', service: 'THUMBNAIL', identifier, name: ownerName, data64: await fileToBase64(toUpload) });
+  await qdnRequest({ action: 'PUBLISH_QDN_RESOURCE', service: 'THUMBNAIL', identifier, name: ownerName, base64: await fileToBase64(toUpload), filename: toUpload === file ? 'avatar.gif' : 'avatar.jpg' });
   await qdnRequest({ action: 'SET_GROUP_AVATAR', groupId, avatar: { service: 'THUMBNAIL', name: ownerName, identifier } });
 }
 
